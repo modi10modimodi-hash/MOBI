@@ -423,35 +423,33 @@ server.listen(PORT, () => {
 // ═══════════════════════════════════════════════════════════════
 // END - Cold Room V3.0 Complete Server
 // © 2025 Cold Room - All Rights Reserved
-// ═══════════════════════════════════════════════════════════════
-
-socket.emit('login-success', {
-  user: {
-    id: foundId,
-    username: user.username,
-    displayName: user.displayName,
-    avatar: user.avatar,
-    gender: user.gender,
-    isOwner: user.isOwner,
-    isModerator: globalRoom ? globalRoom.moderators.includes(foundId) : false,
-    canSendImages: user.canSendImages,
-    canSendVideos: user.canSendVideos,
-    nameChangeCount: user.nameChangeCount || 0,
-    profilePicture: user.profilePicture,
-  },
-  room: {
-    id: globalRoom.id,
-    name: globalRoom.name,
-    messages: (globalRoom.messages || []).slice(-50),
-    partyMode: globalRoom.partyMode || false,
-    moderators: globalRoom.moderators || [],
-    videoUrl: globalRoom.videoUrl,
-    musicUrl: globalRoom.musicUrl,
-    musicVolume: globalRoom.musicVolume || 0.5
-  },
-  systemSettings,
-  blockedUsers: Array.from(userBlockedList)
-});
+// ═══════════════════════════════════════════════════════════════('login-success', {
+        user: {
+          id: foundId,
+          username: user.username,
+          displayName: user.displayName,
+          avatar: user.avatar,
+          gender: user.gender,
+          isOwner: user.isOwner,
+          isModerator: globalRoom ? globalRoom.moderators.includes(foundId) : false,
+          canSendImages: user.canSendImages,
+          canSendVideos: user.canSendVideos,
+          nameChangeCount: user.nameChangeCount || 0,
+          profilePicture: user.profilePicture
+        },
+        room: {
+          id: globalRoom.id,
+          name: globalRoom.name,
+          messages: (globalRoom.messages || []).slice(-50),
+          partyMode: globalRoom.partyMode || false,
+          moderators: globalRoom.moderators || [],
+          videoUrl: globalRoom.videoUrl,
+          musicUrl: globalRoom.musicUrl,
+          musicVolume: globalRoom.musicVolume || 0.5
+        },
+        systemSettings,
+        blockedUsers: Array.from(userBlockedList)
+      });
 
       updateRoomsList();
       updateUsersList('global_cold');
