@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Cold Room V3.0 - Complete Enhanced Server
+// Cold Room V3.0 - COMPLETE FIXED SERVER
 // © 2025 Cold Room - All Rights Reserved
 // ═══════════════════════════════════════════════════════════════
 
@@ -27,6 +27,7 @@ app.use(express.json({ limit: '100mb' }));
 
 const DATA_FILE = 'cold_room_data.json';
 
+// System Settings
 let systemSettings = {
   siteLogo: 'https://j.top4top.io/p_3585vud691.jpg',
   siteTitle: 'Cold Room',
@@ -35,60 +36,65 @@ let systemSettings = {
   chatMusic: '',
   loginMusicVolume: 0.5,
   chatMusicVolume: 0.5,
-  partyMode: {},
-  video: null
+  allowImageUpload: true,
+  imageUploadMethod: 'both' // 'url', 'file', 'both'
 };
 
-let data = {
-  users: {},
-  rooms: {},
-  mutedUsers: {},
-  bannedUsers: {},
-  bannedIPs: {},
-  privateMessages: {},
-  supportMessages: {},
-  blockedUsers: {},
-  systemSettings
-};
-
+// Data storage
 const users = new Map();
 const rooms = new Map();
 const mutedUsers = new Map();
 const bannedUsers = new Map();
-const bannedIPs = new Map();
 const privateMessages = new Map();
 const supportMessages = new Map();
 const onlineUsers = new Map();
 const blockedUsers = new Map();
+const messageReadStatus = new Map(); // For read receipts
 
-// Load data
+// ═══════════════════════════════════════════════════════════════
+// DATA PERSISTENCE
+// ═══════════════════════════════════════════════════════════════
+
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const content = fs.readFileSync(DATA_FILE, 'utf8');
       const loaded = JSON.parse(content);
-      data = { ...data, ...loaded };
       
-      Object.entries(data.users || {}).forEach(([k,v]) => users.set(k, v));
-      Object.entries(data.rooms || {}).forEach(([k,v]) => rooms.set(k, v));
-      Object.entries(data.mutedUsers || {}).forEach(([k,v]) => mutedUsers.set(k, v));
-      Object.entries(data.bannedUsers || {}).forEach(([k,v]) => bannedUsers.set(k, v));
-      Object.entries(data.bannedIPs || {}).forEach(([k,v]) => bannedIPs.set(k, v));
-      Object.entries(data.privateMessages || {}).forEach(([k,v]) => privateMessages.set(k, v));
-      Object.entries(data.supportMessages || {}).forEach(([k,v]) => supportMessages.set(k, v));
-      Object.entries(data.blockedUsers || {}).forEach(([k,v]) => blockedUsers.set(k, new Set(v)));
+      Object.entries(loaded.users || {}).forEach(([k,v]) => {
+        v.lastActivity = Date.now();
+        users.set(k, v);
+      });
+      Object.entries(loaded.rooms || {}).forEach(([k,v]) => {
+        // Keep only last 50 messages per room
+        if (v.messages && v.messages.length > 50) {
+          v.messages = v.messages.slice(-50);
+        }
+        rooms.set(k, v);
+      });
+      Object.entries(loaded.mutedUsers || {}).forEach(([k,v]) => mutedUsers.set(k, v));
+      Object.entries(loaded.bannedUsers || {}).forEach(([k,v]) => bannedUsers.set(k, v));
+      Object.entries(loaded.privateMessages || {}).forEach(([k,v]) => {
+        // Keep only last 50 messages per conversation
+        const cleanedMessages = {};
+        Object.entries(v).forEach(([userId, msgs]) => {
+          cleanedMessages[userId] = msgs.slice(-50);
+        });
+        privateMessages.set(k, cleanedMessages);
+      });
+      Object.entries(loaded.supportMessages || {}).forEach(([k,v]) => supportMessages.set(k, v));
+      Object.entries(loaded.blockedUsers || {}).forEach(([k,v]) => blockedUsers.set(k, new Set(v)));
       
-      systemSettings = loaded.systemSettings || systemSettings;
-      console.log('✅ Data loaded from', DATA_FILE);
+      systemSettings = { ...systemSettings, ...(loaded.systemSettings || {}) };
+      console.log('✅ Data loaded successfully');
     } else {
-      console.log('⚠️ Data file not found — starting fresh');
+      console.log('⚠️ No data file found, starting fresh');
     }
   } catch (e) {
-    console.error('❌ loadData error', e);
+    console.error('❌ Error loading data:', e);
   }
 }
 
-// Save data
 function saveData() {
   try {
     const toSave = {
@@ -96,7 +102,6 @@ function saveData() {
       rooms: Object.fromEntries(rooms),
       mutedUsers: Object.fromEntries(mutedUsers),
       bannedUsers: Object.fromEntries(bannedUsers),
-      bannedIPs: Object.fromEntries(bannedIPs),
       privateMessages: Object.fromEntries(privateMessages),
       supportMessages: Object.fromEntries(supportMessages),
       blockedUsers: Object.fromEntries(
@@ -106,11 +111,14 @@ function saveData() {
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(toSave, null, 2), 'utf8');
   } catch (e) {
-    console.error('❌ saveData error', e);
+    console.error('❌ Error saving data:', e);
   }
 }
 
-// Initialize owner and global room
+// ═══════════════════════════════════════════════════════════════
+// INITIALIZE OWNER & GLOBAL ROOM
+// ═══════════════════════════════════════════════════════════════
+
 function createOwnerIfMissing() {
   const ownerId = 'owner_cold_001';
   if (!users.has(ownerId)) {
@@ -122,15 +130,16 @@ function createOwnerIfMissing() {
       isOwner: true,
       avatar: '👑',
       gender: 'prince',
-      specialBadges: ['👑'],
       joinDate: new Date().toISOString(),
       canSendImages: true,
       canSendVideos: true,
       nameChangeCount: 0,
-      profilePicture: null
+      profilePicture: null,
+      lastActivity: Date.now()
     };
     users.set(ownerId, owner);
     privateMessages.set(ownerId, {});
+    blockedUsers.set(ownerId, new Set());
     console.log('✅ Owner created: COLDKING / ColdKing@2025');
   }
 }
@@ -154,76 +163,117 @@ function createGlobalRoomIfMissing() {
       createdAt: new Date().toISOString(),
       videoUrl: null,
       musicUrl: null,
-      musicVolume: 0.5
+      musicVolume: 0.5,
+      partyMode: false
     });
     console.log('✅ Global room created');
   }
 }
 
-// Broadcast functions
-function updateRoomsList() {
-  try {
-    const roomsArray = Array.from(rooms.values()).map(r => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      createdBy: r.createdBy,
-      userCount: (r.users || []).length,
-      hasPassword: !!r.hasPassword,
-      isOfficial: !!r.isOfficial
-    }));
-    io.emit('rooms-list', roomsArray);
-  } catch (e) {
-    console.error(e);
+// ═══════════════════════════════════════════════════════════════
+// CLEANUP INACTIVE USERS (10 days)
+// ═══════════════════════════════════════════════════════════════
+
+function cleanupInactiveUsers() {
+  const tenDaysAgo = Date.now() - (10 * 24 * 60 * 60 * 1000);
+  const toDelete = [];
+  
+  for (const [userId, user] of users.entries()) {
+    if (user.isOwner) continue; // Never delete owner
+    if (user.lastActivity && user.lastActivity < tenDaysAgo) {
+      toDelete.push(userId);
+    }
+  }
+  
+  toDelete.forEach(userId => {
+    users.delete(userId);
+    privateMessages.delete(userId);
+    blockedUsers.delete(userId);
+    mutedUsers.delete(userId);
+    
+    rooms.forEach(room => {
+      room.users = room.users.filter(u => u !== userId);
+      room.moderators = room.moderators.filter(m => m !== userId);
+      room.messages = room.messages.filter(msg => msg.userId !== userId);
+    });
+  });
+  
+  if (toDelete.length > 0) {
+    console.log(`🧹 Cleaned ${toDelete.length} inactive users`);
+    saveData();
   }
 }
 
-function updateUsersList(roomId) {
-  try {
-    const room = rooms.get(roomId);
-    if (!room) return;
-    const usersArray = (room.users || []).map(uid => {
-      const u = users.get(uid);
-      if (!u) return null;
-      return {
-        id: u.id,
-        displayName: u.displayName,
-        avatar: u.avatar,
-        profilePicture: u.profilePicture,
-        isOwner: !!u.isOwner,
-        isModerator: room.moderators.includes(u.id),
-        isOnline: onlineUsers.has(u.id)
-      };
-    }).filter(Boolean);
-    io.to(roomId).emit('users-list', usersArray);
-  } catch (e) {
-    console.error(e);
-  }
-}
+// Run cleanup every 24 hours
+setInterval(cleanupInactiveUsers, 24 * 60 * 60 * 1000);
 
-function setPartyMode(roomId, enabled) {
-  systemSettings.partyMode = systemSettings.partyMode || {};
-  systemSettings.partyMode[roomId] = !!enabled;
-  io.to(roomId).emit('party-mode-changed', { enabled: !!enabled, roomId });
-  saveData();
-}
+// ═══════════════════════════════════════════════════════════════
+// INITIALIZE DATA
+// ═══════════════════════════════════════════════════════════════
 
-// Load and initialize
 loadData();
 createOwnerIfMissing();
 createGlobalRoomIfMissing();
 saveData();
 
-// Routes
+// ═══════════════════════════════════════════════════════════════
+// ROUTES
+// ═══════════════════════════════════════════════════════════════
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/settings', (req, res) => res.json(systemSettings));
 
-// Socket handlers
+// ═══════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+function updateRoomsList() {
+  const roomsArray = Array.from(rooms.values()).map(r => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    createdBy: r.createdBy,
+    creatorId: r.creatorId,
+    userCount: (r.users || []).length,
+    hasPassword: !!r.hasPassword,
+    isOfficial: !!r.isOfficial
+  }));
+  io.emit('rooms-list', roomsArray);
+}
+
+function updateUsersList(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  
+  const usersArray = (room.users || []).map(uid => {
+    const u = users.get(uid);
+    if (!u) return null;
+    return {
+      id: u.id,
+      displayName: u.displayName,
+      avatar: u.avatar,
+      profilePicture: u.profilePicture,
+      isOwner: !!u.isOwner,
+      isModerator: room.moderators.includes(u.id),
+      isOnline: onlineUsers.has(u.id)
+    };
+  }).filter(Boolean);
+  
+  io.to(roomId).emit('users-list', usersArray);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SOCKET CONNECTION
+// ═══════════════════════════════════════════════════════════════
+
 io.on('connection', (socket) => {
   console.log('🔗 New connection:', socket.id);
-  socket.userIP = socket.handshake.address || socket.conn.remoteAddress || '';
+  socket.userIP = socket.handshake.address || '';
 
-  // LOGIN
+  // ═══════════════════════════════════════════════════════════════
+  // AUTHENTICATION
+  // ═══════════════════════════════════════════════════════════════
+
   socket.on('login', (payload) => {
     try {
       const { username, password } = payload || {};
@@ -237,22 +287,143 @@ io.on('connection', (socket) => {
           break;
         }
       }
+      
       if (!foundId) return socket.emit('login-error', 'Invalid credentials');
-      if (bannedUsers.has(foundId)) return socket.emit('banned-user', { reason: 'Banned' });
+      if (bannedUsers.has(foundId)) return socket.emit('banned-user', { reason: 'You are banned' });
 
       const user = users.get(foundId);
+      user.lastActivity = Date.now();
+      
       socket.userId = foundId;
       socket.userData = user;
       onlineUsers.set(foundId, Date.now());
 
       const globalRoom = rooms.get('global_cold');
-      if (globalRoom && !globalRoom.users.includes(foundId)) globalRoom.users.push(foundId);
+      if (globalRoom && !globalRoom.users.includes(foundId)) {
+        globalRoom.users.push(foundId);
+      }
+      
       socket.join('global_cold');
       socket.currentRoom = 'global_cold';
 
       const userBlockedList = blockedUsers.get(foundId) || new Set();
 
-      socket.emit('login-success', {
+      socket.emit('support-messages-list', Array.from(supportMessages.values()));
+    } catch (e) {
+      console.error('Get support messages error:', e);
+    }
+  });
+
+  socket.on('delete-support-message', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      supportMessages.delete(payload.messageId);
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Message deleted');
+    } catch (e) {
+      console.error('Delete support message error:', e);
+    }
+  });
+
+  socket.on('unmute-multiple', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      (payload.userIds || []).forEach(uid => mutedUsers.delete(uid));
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Users unmuted');
+    } catch (e) {
+      console.error('Unmute multiple error:', e);
+    }
+  });
+
+  socket.on('unban-multiple', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      (payload.userIds || []).forEach(uid => bannedUsers.delete(uid));
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Users unbanned');
+    } catch (e) {
+      console.error('Unban multiple error:', e);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // HEARTBEAT & DISCONNECT
+  // ═══════════════════════════════════════════════════════════════
+
+  socket.on('ping', () => {
+    try {
+      if (socket.userId) {
+        onlineUsers.set(socket.userId, Date.now());
+        const user = users.get(socket.userId);
+        if (user) user.lastActivity = Date.now();
+      }
+    } catch (e) {
+      console.error('Ping error:', e);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    try {
+      if (socket.userId) {
+        onlineUsers.delete(socket.userId);
+        rooms.forEach(room => {
+          room.users = (room.users || []).filter(u => u !== socket.userId);
+        });
+      }
+      console.log('🔌 Disconnect:', socket.id);
+    } catch (e) {
+      console.error('Disconnect error:', e);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO-SAVE & CLEANUP
+// ═══════════════════════════════════════════════════════════════
+
+// Auto-save every 30 seconds
+setInterval(() => {
+  try {
+    saveData();
+  } catch (e) {
+    console.error('Auto-save error:', e);
+  }
+}, 30000);
+
+// Keep server alive (for hosting platforms)
+setInterval(() => {
+  console.log('🔄 Server alive -', new Date().toISOString());
+}, 5 * 60 * 1000); // Every 5 minutes
+
+// ═══════════════════════════════════════════════════════════════
+// START SERVER
+// ═══════════════════════════════════════════════════════════════
+
+server.listen(PORT, () => {
+  console.log(`🚀 Cold Room V3.0 - Server running on port ${PORT}`);
+  console.log(`✅ Owner: COLDKING / ColdKing@2025`);
+  console.log(`✅ All features enabled!`);
+  console.log(`✅ Data persistence: ACTIVE`);
+  console.log(`✅ Auto-cleanup: ACTIVE (10 days inactivity)`);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// END - Cold Room V3.0 Complete Server
+// © 2025 Cold Room - All Rights Reserved
+// ═══════════════════════════════════════════════════════════════('login-success', {
         user: {
           id: foundId,
           username: user.username,
@@ -263,7 +434,6 @@ io.on('connection', (socket) => {
           isModerator: globalRoom ? globalRoom.moderators.includes(foundId) : false,
           canSendImages: user.canSendImages,
           canSendVideos: user.canSendVideos,
-          specialBadges: user.specialBadges || [],
           nameChangeCount: user.nameChangeCount || 0,
           profilePicture: user.profilePicture
         },
@@ -271,30 +441,39 @@ io.on('connection', (socket) => {
           id: globalRoom.id,
           name: globalRoom.name,
           messages: (globalRoom.messages || []).slice(-50),
-          partyMode: systemSettings.partyMode[globalRoom.id] || false,
-          moderators: globalRoom.moderators || []
+          partyMode: globalRoom.partyMode || false,
+          moderators: globalRoom.moderators || [],
+          videoUrl: globalRoom.videoUrl,
+          musicUrl: globalRoom.musicUrl,
+          musicVolume: globalRoom.musicVolume || 0.5
         },
         systemSettings,
-        video: systemSettings.video,
         blockedUsers: Array.from(userBlockedList)
       });
 
       updateRoomsList();
       updateUsersList('global_cold');
+      saveData();
     } catch (e) {
-      console.error('login error', e);
+      console.error('Login error:', e);
+      socket.emit('login-error', 'Server error');
     }
   });
 
-  // REGISTER
   socket.on('register', (payload) => {
     try {
       const { username, password, displayName, gender } = payload || {};
-      if (!username || !password || !displayName) return socket.emit('register-error', 'Missing fields');
+      if (!username || !password || !displayName || !gender) {
+        return socket.emit('register-error', 'Missing fields');
+      }
 
       for (const u of users.values()) {
-        if (u.username.toLowerCase() === username.toLowerCase()) return socket.emit('register-error', 'Username exists');
-        if (u.displayName.toLowerCase() === displayName.toLowerCase()) return socket.emit('register-error', 'Display name exists');
+        if (u.username.toLowerCase() === username.toLowerCase()) {
+          return socket.emit('register-error', 'Username already exists');
+        }
+        if (u.displayName.toLowerCase() === displayName.toLowerCase()) {
+          return socket.emit('register-error', 'Display name already taken');
+        }
       }
 
       const userId = 'user_' + uuidv4();
@@ -307,29 +486,36 @@ io.on('connection', (socket) => {
         joinDate: new Date().toISOString(),
         avatar: gender === 'prince' ? '🤴' : '👸',
         gender: gender || 'unknown',
-        specialBadges: [],
         canSendImages: false,
         canSendVideos: false,
         nameChangeCount: 0,
-        profilePicture: null
+        profilePicture: null,
+        lastActivity: Date.now()
       };
+      
       users.set(userId, newUser);
       privateMessages.set(userId, {});
       blockedUsers.set(userId, new Set());
       saveData();
-      socket.emit('register-success', { message: 'Account created!', username });
+      
+      socket.emit('register-success', { message: 'Account created successfully!', username });
     } catch (e) {
-      console.error('register error', e);
+      console.error('Register error:', e);
+      socket.emit('register-error', 'Server error');
     }
   });
 
-  // PROFILE PICTURE
+  // ═══════════════════════════════════════════════════════════════
+  // PROFILE MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════
+
   socket.on('update-profile-picture', (payload) => {
     try {
       const user = users.get(socket.userId);
       if (!user) return socket.emit('error', 'Not authenticated');
       
       user.profilePicture = payload.profilePicture || null;
+      user.lastActivity = Date.now();
       saveData();
       
       socket.emit('profile-updated', {
@@ -340,11 +526,10 @@ io.on('connection', (socket) => {
       
       if (socket.currentRoom) updateUsersList(socket.currentRoom);
     } catch (e) {
-      console.error('update-profile-picture error', e);
+      console.error('Update profile error:', e);
     }
   });
 
-  // NAME CHANGE
   socket.on('change-display-name', (payload) => {
     try {
       const user = users.get(socket.userId);
@@ -363,6 +548,7 @@ io.on('connection', (socket) => {
 
       if (user.isOwner) {
         user.displayName = newName;
+        user.lastActivity = Date.now();
         socket.emit('action-success', 'Name changed successfully');
         saveData();
         if (socket.currentRoom) updateUsersList(socket.currentRoom);
@@ -371,90 +557,41 @@ io.on('connection', (socket) => {
 
       const changeCount = user.nameChangeCount || 0;
       if (changeCount >= 2) {
-        return socket.emit('error', 'Maximum free changes used. Submit a request instead.');
+        return socket.emit('error', 'Maximum free changes used');
       }
 
       user.displayName = newName;
       user.nameChangeCount = changeCount + 1;
+      user.lastActivity = Date.now();
       
       const remaining = 2 - user.nameChangeCount;
-      socket.emit('action-success', `Name changed! ${remaining} free changes remaining`);
+      socket.emit('action-success', `Name changed! ${remaining} changes remaining`);
       saveData();
       if (socket.currentRoom) updateUsersList(socket.currentRoom);
     } catch (e) {
-      console.error('change-display-name error', e);
+      console.error('Change name error:', e);
     }
   });
 
-  socket.on('request-name-change', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user) return socket.emit('error', 'Not authenticated');
-      
-      const id = 'namechange_' + uuidv4();
-      supportMessages.set(id, {
-        id,
-        type: 'name_change_request',
-        from: user.displayName,
-        userId: socket.userId,
-        currentName: user.displayName,
-        requestedName: (payload.newName || '').toString().trim(),
-        message: `Name change request: "${user.displayName}" → "${payload.newName}"`,
-        sentAt: new Date().toISOString(),
-        fromIP: socket.userIP || ''
-      });
-      saveData();
-      socket.emit('action-success', 'Name change request sent to owner');
-    } catch (e) {
-      console.error('request-name-change error', e);
-    }
-  });
+  // ═══════════════════════════════════════════════════════════════
+  // MESSAGING
+  // ═══════════════════════════════════════════════════════════════
 
-  socket.on('approve-name-change', (payload) => {
-    try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
-      
-      const request = supportMessages.get(payload.requestId);
-      if (!request || request.type !== 'name_change_request') {
-        return socket.emit('error', 'Request not found');
-      }
-
-      const targetUser = users.get(request.userId);
-      if (!targetUser) return socket.emit('error', 'User not found');
-
-      for (const [id, u] of users.entries()) {
-        if (id !== request.userId && u.displayName.toLowerCase() === request.requestedName.toLowerCase()) {
-          return socket.emit('error', 'Name already taken');
-        }
-      }
-
-      targetUser.displayName = request.requestedName;
-      supportMessages.delete(payload.requestId);
-      saveData();
-      
-      const targetSocket = Array.from(io.sockets.sockets.values()).find(s => s.userId === request.userId);
-      if (targetSocket) {
-        targetSocket.emit('action-success', `Your name has been changed to: ${request.requestedName}`);
-        if (targetSocket.currentRoom) updateUsersList(targetSocket.currentRoom);
-      }
-      
-      socket.emit('action-success', 'Name change approved');
-    } catch (e) {
-      console.error('approve-name-change error', e);
-    }
-  });
-
-  // SEND MESSAGE
   socket.on('send-message', (payload) => {
     try {
       const user = users.get(socket.userId);
       const room = rooms.get(socket.currentRoom);
-      if (!user || !room) return socket.emit('error', 'Not in room or not authenticated');
+      if (!user || !room) return socket.emit('error', 'Not in room');
 
       const mute = mutedUsers.get(socket.userId);
-      if (mute && mute.expires && Date.now() > mute.expires) mutedUsers.delete(socket.userId);
-      if (mutedUsers.has(socket.userId)) return socket.emit('error', 'You are muted');
+      if (mute && mute.expires && Date.now() > mute.expires) {
+        mutedUsers.delete(socket.userId);
+      }
+      if (mutedUsers.has(socket.userId)) {
+        return socket.emit('error', 'You are muted');
+      }
+
+      user.lastActivity = Date.now();
 
       const message = {
         id: 'msg_' + uuidv4(),
@@ -470,41 +607,65 @@ io.on('connection', (socket) => {
         roomId: socket.currentRoom,
         edited: false,
         isImage: false,
-        isVideo: false
+        isVideo: false,
+        replyTo: payload.replyTo || null
       };
+      
       room.messages = room.messages || [];
       room.messages.push(message);
-      if (room.messages.length > 500) room.messages = room.messages.slice(-500);
+      
+      // Keep only last 50 messages
+      if (room.messages.length > 50) {
+        room.messages = room.messages.slice(-50);
+      }
+      
       io.to(socket.currentRoom).emit('new-message', message);
       saveData();
     } catch (e) {
-      console.error('send-message error', e);
+      console.error('Send message error:', e);
     }
   });
 
-  // EDIT MESSAGE
   socket.on('edit-message', (payload) => {
     try {
       const room = rooms.get(socket.currentRoom);
       if (!room) return;
-      const idx = (room.messages || []).findIndex(m => m.id === payload.messageId && m.userId === socket.userId);
-      if (idx === -1) return socket.emit('error', 'Message not found or permission denied');
+      
+      const idx = (room.messages || []).findIndex(
+        m => m.id === payload.messageId && m.userId === socket.userId
+      );
+      
+      if (idx === -1) return socket.emit('error', 'Message not found');
+      
       room.messages[idx].text = (payload.newText || '').toString().substring(0, 1000);
       room.messages[idx].edited = true;
-      io.to(socket.currentRoom).emit('message-edited', { messageId: payload.messageId, newText: room.messages[idx].text });
+      
+      io.to(socket.currentRoom).emit('message-edited', {
+        messageId: payload.messageId,
+        newText: room.messages[idx].text
+      });
+      
+      const user = users.get(socket.userId);
+      if (user) user.lastActivity = Date.now();
+      
       saveData();
     } catch (e) {
-      console.error('edit-message error', e);
+      console.error('Edit message error:', e);
     }
   });
 
-  // SEND IMAGE
   socket.on('send-image', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user || !user.canSendImages) return socket.emit('error', 'No permission to send images');
+      if (!user || !user.canSendImages) {
+        return socket.emit('error', 'No permission to send images');
+      }
+      
       const room = rooms.get(socket.currentRoom);
       if (!room) return;
+
+      user.lastActivity = Date.now();
+
       const message = {
         id: 'msg_' + uuidv4(),
         userId: socket.userId,
@@ -515,27 +676,38 @@ io.on('connection', (socket) => {
         timestamp: new Date().toLocaleTimeString(),
         date: new Date().toISOString(),
         isOwner: !!user.isOwner,
+        isModerator: room.moderators.includes(socket.userId),
         roomId: socket.currentRoom,
         isImage: true,
         isVideo: false
       };
+      
       room.messages = room.messages || [];
       room.messages.push(message);
-      if (room.messages.length > 500) room.messages = room.messages.slice(-500);
+      
+      if (room.messages.length > 50) {
+        room.messages = room.messages.slice(-50);
+      }
+      
       io.to(socket.currentRoom).emit('new-message', message);
       saveData();
     } catch (e) {
-      console.error('send-image error', e);
+      console.error('Send image error:', e);
     }
   });
 
-  // SEND VIDEO
   socket.on('send-video', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user || !user.canSendVideos) return socket.emit('error', 'No permission to send videos');
+      if (!user || !user.canSendVideos) {
+        return socket.emit('error', 'No permission to send videos');
+      }
+      
       const room = rooms.get(socket.currentRoom);
       if (!room) return;
+
+      user.lastActivity = Date.now();
+
       const message = {
         id: 'msg_' + uuidv4(),
         userId: socket.userId,
@@ -546,30 +718,165 @@ io.on('connection', (socket) => {
         timestamp: new Date().toLocaleTimeString(),
         date: new Date().toISOString(),
         isOwner: !!user.isOwner,
+        isModerator: room.moderators.includes(socket.userId),
         roomId: socket.currentRoom,
         isImage: false,
         isVideo: true
       };
+      
       room.messages = room.messages || [];
       room.messages.push(message);
-      if (room.messages.length > 500) room.messages = room.messages.slice(-500);
+      
+      if (room.messages.length > 50) {
+        room.messages = room.messages.slice(-50);
+      }
+      
       io.to(socket.currentRoom).emit('new-message', message);
       saveData();
     } catch (e) {
-      console.error('send-video error', e);
+      console.error('Send video error:', e);
     }
   });
 
-  // Continue in next part...
-      // ═══════════════════════════════════════════════════════════════
-// Cold Room V3.0 - Server Part 2 (Continuation)
-// ═══════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+  // PRIVATE MESSAGES
+  // ═══════════════════════════════════════════════════════════════
 
+  socket.on('send-private-message', (payload) => {
+    try {
+      const sender = users.get(socket.userId);
+      const receiver = users.get(payload.toUserId);
+      if (!sender || !receiver) return socket.emit('error', 'Invalid users');
+
+      // Check if sender is blocked
+      const receiverBlocked = blockedUsers.get(payload.toUserId) || new Set();
+      if (receiverBlocked.has(socket.userId) && !sender.isOwner) {
+        return socket.emit('error', 'You are blocked by this user');
+      }
+
+      sender.lastActivity = Date.now();
+
+      const message = {
+        id: 'pm_' + uuidv4(),
+        from: socket.userId,
+        to: payload.toUserId,
+        fromName: sender.displayName,
+        text: (payload.text || '').toString().substring(0, 1000),
+        timestamp: new Date().toLocaleTimeString(),
+        date: new Date().toISOString(),
+        edited: false,
+        read: false,
+        replyTo: payload.replyTo || null
+      };
+
+      // Save to sender's messages
+      if (!privateMessages.has(socket.userId)) privateMessages.set(socket.userId, {});
+      const smap = privateMessages.get(socket.userId);
+      if (!smap[payload.toUserId]) smap[payload.toUserId] = [];
+      smap[payload.toUserId].push(message);
+      
+      // Keep only last 50 messages
+      if (smap[payload.toUserId].length > 50) {
+        smap[payload.toUserId] = smap[payload.toUserId].slice(-50);
+      }
+
+      // Save to receiver's messages
+      if (!privateMessages.has(payload.toUserId)) privateMessages.set(payload.toUserId, {});
+      const rmap = privateMessages.get(payload.toUserId);
+      if (!rmap[socket.userId]) rmap[socket.userId] = [];
+      rmap[socket.userId].push(message);
+      
+      if (rmap[socket.userId].length > 50) {
+        rmap[socket.userId] = rmap[socket.userId].slice(-50);
+      }
+
+      // Send to receiver if online
+      const receiverSocket = Array.from(io.sockets.sockets.values())
+        .find(s => s.userId === payload.toUserId);
+      if (receiverSocket) {
+        receiverSocket.emit('new-private-message', message);
+      }
+
+      socket.emit('private-message-sent', message);
+      saveData();
+    } catch (e) {
+      console.error('Send private message error:', e);
+    }
+  });
+
+  socket.on('get-private-messages', (payload) => {
+    try {
+      const list = privateMessages.get(socket.userId)?.[payload.withUserId] || [];
+      
+      // Mark messages as read
+      list.forEach(msg => {
+        if (msg.to === socket.userId) {
+          msg.read = true;
+        }
+      });
+      
+      socket.emit('private-messages-list', { 
+        withUserId: payload.withUserId, 
+        messages: list.slice(-50)
+      });
+      
+      saveData();
+    } catch (e) {
+      console.error('Get private messages error:', e);
+    }
+  });
+
+  socket.on('block-user', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      const targetUser = users.get(payload.userId);
+      
+      // Owner cannot be blocked
+      if (targetUser && targetUser.isOwner) {
+        return socket.emit('error', 'Cannot block the owner');
+      }
+      
+      if (!blockedUsers.has(socket.userId)) {
+        blockedUsers.set(socket.userId, new Set());
+      }
+      blockedUsers.get(socket.userId).add(payload.userId);
+      
+      if (user) user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'User blocked');
+    } catch (e) {
+      console.error('Block user error:', e);
+    }
+  });
+
+  socket.on('unblock-user', (payload) => {
+    try {
+      if (blockedUsers.has(socket.userId)) {
+        blockedUsers.get(socket.userId).delete(payload.userId);
+        saveData();
+      }
+      
+      const user = users.get(socket.userId);
+      if (user) user.lastActivity = Date.now();
+      
+      socket.emit('action-success', 'User unblocked');
+    } catch (e) {
+      console.error('Unblock user error:', e);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   // ROOM MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════
+
   socket.on('create-room', (payload) => {
     try {
       const user = users.get(socket.userId);
       if (!user) return socket.emit('error', 'Not authenticated');
+      
+      user.lastActivity = Date.now();
+      
       const roomId = 'room_' + uuidv4();
       const newRoom = {
         id: roomId,
@@ -587,16 +894,19 @@ io.on('connection', (socket) => {
         createdAt: new Date().toISOString(),
         videoUrl: null,
         musicUrl: null,
-        musicVolume: 0.5
+        musicVolume: 0.5,
+        partyMode: false
       };
+      
       rooms.set(roomId, newRoom);
       socket.join(roomId);
       socket.currentRoom = roomId;
+      
       socket.emit('room-created', { roomId, roomName: newRoom.name });
       updateRoomsList();
       saveData();
     } catch (e) {
-      console.error('create-room error', e);
+      console.error('Create room error:', e);
     }
   });
 
@@ -604,24 +914,35 @@ io.on('connection', (socket) => {
     try {
       const user = users.get(socket.userId);
       if (!user) return socket.emit('error', 'Not authenticated');
+      
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
 
+      // Check password
       if (room.hasPassword && !user.isOwner) {
         if (!payload.password || !bcrypt.compareSync(payload.password.toString(), room.password)) {
           return socket.emit('error', 'Wrong password');
         }
       }
 
+      // Leave previous room
       if (socket.currentRoom) {
         const prev = rooms.get(socket.currentRoom);
-        if (prev) prev.users = (prev.users || []).filter(u => u !== socket.userId);
+        if (prev) {
+          prev.users = (prev.users || []).filter(u => u !== socket.userId);
+        }
         socket.leave(socket.currentRoom);
       }
 
-      if (!room.users.includes(socket.userId)) room.users.push(socket.userId);
+      // Join new room
+      if (!room.users.includes(socket.userId)) {
+        room.users.push(socket.userId);
+      }
+      
       socket.join(room.id);
       socket.currentRoom = room.id;
+      
+      user.lastActivity = Date.now();
 
       socket.emit('room-joined', {
         room: {
@@ -631,86 +952,181 @@ io.on('connection', (socket) => {
           messages: (room.messages || []).slice(-50),
           isCreator: room.creatorId === socket.userId,
           isModerator: room.moderators.includes(socket.userId),
-          partyMode: systemSettings.partyMode[room.id] || false,
-          moderators: room.moderators || []
-        },
-        video: systemSettings.video
+          partyMode: room.partyMode || false,
+          moderators: room.moderators || [],
+          videoUrl: room.videoUrl,
+          musicUrl: room.musicUrl,
+          musicVolume: room.musicVolume || 0.5
+        }
       });
 
       updateUsersList(room.id);
       saveData();
     } catch (e) {
-      console.error('join-room error', e);
+      console.error('Join room error:', e);
     }
   });
 
   socket.on('update-room', (payload) => {
     try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
+      const user = users.get(socket.userId);
       const room = rooms.get(payload.roomId);
+      
       if (!room) return socket.emit('error', 'Room not found');
-      if (payload.name !== undefined) room.name = payload.name.toString().substring(0, 100);
-      if (payload.description !== undefined) room.description = payload.description.toString().substring(0, 500);
+      
+      // Only owner or room creator can update
+      if (!user.isOwner && room.creatorId !== socket.userId) {
+        return socket.emit('error', 'No permission');
+      }
+      
+      if (payload.name !== undefined) {
+        room.name = payload.name.toString().substring(0, 100);
+      }
+      if (payload.description !== undefined) {
+        room.description = payload.description.toString().substring(0, 500);
+      }
       if (payload.password !== undefined) {
         room.hasPassword = !!payload.password;
         room.password = payload.password ? bcrypt.hashSync(payload.password.toString(), 10) : null;
       }
-      io.to(room.id).emit('room-updated', { name: room.name, description: room.description });
+      
+      user.lastActivity = Date.now();
+      
+      io.to(room.id).emit('room-updated', { 
+        name: room.name, 
+        description: room.description 
+      });
+      
+      updateRoomsList();
       saveData();
+      socket.emit('action-success', 'Room updated');
     } catch (e) {
-      console.error('update-room error', e);
+      console.error('Update room error:', e);
     }
   });
 
   socket.on('delete-room', (payload) => {
     try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
+      const user = users.get(socket.userId);
       const room = rooms.get(payload.roomId);
-      if (!room || room.isOfficial) return socket.emit('error', 'Cannot delete room');
-      io.to(payload.roomId).emit('room-deleted', { message: 'Room deleted' });
+      
+      if (!room || room.isOfficial) {
+        return socket.emit('error', 'Cannot delete this room');
+      }
+      
+      // Only owner or room creator can delete
+      if (!user.isOwner && room.creatorId !== socket.userId) {
+        return socket.emit('error', 'No permission');
+      }
+      
+      io.to(payload.roomId).emit('room-deleted', { 
+        message: 'Room has been deleted' 
+      });
+      
       rooms.delete(payload.roomId);
+      user.lastActivity = Date.now();
+      
       updateRoomsList();
       saveData();
+      socket.emit('action-success', 'Room deleted');
     } catch (e) {
-      console.error('delete-room error', e);
+      console.error('Delete room error:', e);
+    }
+  });
+
+  socket.on('silence-room', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      const room = rooms.get(payload.roomId);
+      if (!room) return socket.emit('error', 'Room not found');
+      
+      room.isSilenced = true;
+      user.lastActivity = Date.now();
+      
+      io.to(payload.roomId).emit('room-silenced', { 
+        message: 'Room has been silenced', 
+        forceDisable: true 
+      });
+      
+      saveData();
+    } catch (e) {
+      console.error('Silence room error:', e);
+    }
+  });
+
+  socket.on('unsilence-room', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      const room = rooms.get(payload.roomId);
+      if (!room) return socket.emit('error', 'Room not found');
+      
+      room.isSilenced = false;
+      user.lastActivity = Date.now();
+      
+      io.to(payload.roomId).emit('room-unsilenced', { 
+        message: 'Room silencing removed' 
+      });
+      
+      saveData();
+    } catch (e) {
+      console.error('Unsilence room error:', e);
     }
   });
 
   socket.on('clean-chat', (payload) => {
     try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
+      
       room.messages = [];
-      io.to(payload.roomId).emit('chat-cleaned', { message: 'Chat cleaned' });
+      user.lastActivity = Date.now();
+      
+      io.to(payload.roomId).emit('chat-cleaned', { 
+        message: 'Chat has been cleaned' 
+      });
+      
       saveData();
     } catch (e) {
-      console.error('clean-chat error', e);
+      console.error('Clean chat error:', e);
     }
   });
 
   socket.on('clean-all-rooms', () => {
     try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
       rooms.forEach(room => {
         room.messages = [];
-        io.to(room.id).emit('chat-cleaned', { message: 'All chats cleaned' });
+        io.to(room.id).emit('chat-cleaned', { 
+          message: 'All rooms cleaned' 
+        });
       });
+      
+      user.lastActivity = Date.now();
       saveData();
+      socket.emit('action-success', 'All rooms cleaned');
     } catch (e) {
-      console.error('clean-all-rooms error', e);
+      console.error('Clean all rooms error:', e);
     }
   });
 
-  // ROOM MEDIA SETTINGS
+  // ═══════════════════════════════════════════════════════════════
+  // ROOM MEDIA (Per-Room Video & Music)
+  // ═══════════════════════════════════════════════════════════════
+
   socket.on('get-room-media', (payload) => {
     try {
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
+      
       socket.emit('room-media-data', {
         roomId: room.id,
         videoUrl: room.videoUrl,
@@ -718,14 +1134,14 @@ io.on('connection', (socket) => {
         musicVolume: room.musicVolume || 0.5
       });
     } catch (e) {
-      console.error('get-room-media error', e);
+      console.error('Get room media error:', e);
     }
   });
 
   socket.on('update-room-media', (payload) => {
     try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -750,22 +1166,57 @@ io.on('connection', (socket) => {
         });
       }
 
+      user.lastActivity = Date.now();
       saveData();
     } catch (e) {
-      console.error('update-room-media error', e);
+      console.error('Update room media error:', e);
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // PARTY MODE (Per-Room)
+  // ═══════════════════════════════════════════════════════════════
+
+  socket.on('toggle-party-mode', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      const room = rooms.get(payload.roomId || socket.currentRoom);
+      
+      if (!user || !room) return socket.emit('error', 'Invalid request');
+      
+      // Only owner or moderators can toggle
+      const allowed = user.isOwner || room.moderators.includes(socket.userId);
+      if (!allowed) return socket.emit('error', 'No permission');
+      
+      room.partyMode = !!payload.enabled;
+      user.lastActivity = Date.now();
+      
+      io.to(room.id).emit('party-mode-changed', {
+        enabled: room.partyMode,
+        roomId: room.id
+      });
+      
+      saveData();
+    } catch (e) {
+      console.error('Toggle party mode error:', e);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   // MODERATION
+  // ═══════════════════════════════════════════════════════════════
+
   socket.on('mute-user', (payload) => {
     try {
       const admin = users.get(socket.userId);
       const target = users.get(payload.userId);
-      if (!admin || !target) return socket.emit('error', 'Invalid user');
+      
+      if (!admin || !target) return socket.emit('error', 'Invalid users');
       if (target.isOwner) return socket.emit('error', 'Cannot mute owner');
 
       const durationMin = parseInt(payload.duration) || 0;
       const expires = durationMin > 0 ? Date.now() + durationMin * 60000 : null;
+      
       mutedUsers.set(payload.userId, {
         username: target.displayName,
         expires,
@@ -776,10 +1227,12 @@ io.on('connection', (socket) => {
         byOwner: !!admin.isOwner,
         roomId: payload.roomId || socket.currentRoom
       });
+      
+      admin.lastActivity = Date.now();
       saveData();
       socket.emit('action-success', `Muted ${target.displayName}`);
     } catch (e) {
-      console.error('mute-user error', e);
+      console.error('Mute user error:', e);
     }
   });
 
@@ -793,19 +1246,21 @@ io.on('connection', (socket) => {
 
       if (admin.isOwner) {
         mutedUsers.delete(payload.userId);
+        admin.lastActivity = Date.now();
         saveData();
         return socket.emit('action-success', 'User unmuted');
       }
 
       if (admin.isModerator && (muteInfo.mutedById === socket.userId || !muteInfo.byOwner)) {
         mutedUsers.delete(payload.userId);
+        admin.lastActivity = Date.now();
         saveData();
         return socket.emit('action-success', 'User unmuted');
       }
 
       socket.emit('error', 'You can only unmute users you muted');
     } catch (e) {
-      console.error('unmute-user error', e);
+      console.error('Unmute user error:', e);
     }
   });
 
@@ -813,198 +1268,214 @@ io.on('connection', (socket) => {
     try {
       const admin = users.get(socket.userId);
       const target = users.get(payload.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'Only owner can ban');
+      
+      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
       if (!target || target.isOwner) return socket.emit('error', 'Invalid target');
+      
       bannedUsers.set(payload.userId, {
         username: target.displayName,
         reason: payload.reason || 'Violation',
         bannedBy: admin.displayName,
         bannedAt: Date.now()
       });
+      
+      admin.lastActivity = Date.now();
       saveData();
-      const tSocket = Array.from(io.sockets.sockets.values()).find(s => s.userId === payload.userId);
-      if (tSocket) {
-        try { tSocket.emit('banned', { reason: payload.reason || 'Violation' }); tSocket.disconnect(true); } catch {}
+      
+      const targetSocket = Array.from(io.sockets.sockets.values())
+        .find(s => s.userId === payload.userId);
+      if (targetSocket) {
+        try {
+          targetSocket.emit('banned', { reason: payload.reason || 'Violation' });
+          targetSocket.disconnect(true);
+        } catch {}
       }
+      
       socket.emit('action-success', `Banned ${target.displayName}`);
     } catch (e) {
-      console.error('ban-user error', e);
+      console.error('Ban user error:', e);
     }
   });
 
   socket.on('unban-user', (payload) => {
     try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
       bannedUsers.delete(payload.userId);
+      user.lastActivity = Date.now();
       saveData();
       socket.emit('action-success', 'User unbanned');
     } catch (e) {
-      console.error('unban-user error', e);
+      console.error('Unban user error:', e);
+    }
+  });
+
+  socket.on('delete-account', (payload) => {
+    try {
+      const admin = users.get(socket.userId);
+      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      
+      const target = users.get(payload.userId);
+      if (!target || target.isOwner) return socket.emit('error', 'Invalid target');
+
+      // Remove from all rooms
+      rooms.forEach(room => {
+        room.messages = room.messages.filter(m => m.userId !== payload.userId);
+        room.users = room.users.filter(u => u !== payload.userId);
+        room.moderators = room.moderators.filter(m => m !== payload.userId);
+      });
+
+      users.delete(payload.userId);
+      privateMessages.delete(payload.userId);
+      mutedUsers.delete(payload.userId);
+      bannedUsers.delete(payload.userId);
+      blockedUsers.delete(payload.userId);
+
+      const targetSocket = Array.from(io.sockets.sockets.values())
+        .find(s => s.userId === payload.userId);
+      if (targetSocket) {
+        try {
+          targetSocket.emit('account-deleted', { message: 'Account deleted' });
+          targetSocket.disconnect(true);
+        } catch {}
+      }
+      
+      admin.lastActivity = Date.now();
+      saveData();
+      updateRoomsList();
+      socket.emit('action-success', 'Account deleted');
+    } catch (e) {
+      console.error('Delete account error:', e);
+    }
+  });
+
+  socket.on('delete-message', (payload) => {
+    try {
+      const admin = users.get(socket.userId);
+      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      
+      const room = rooms.get(payload.roomId);
+      if (!room) return socket.emit('error', 'Room not found');
+      
+      room.messages = room.messages.filter(m => m.id !== payload.messageId);
+      admin.lastActivity = Date.now();
+      
+      io.to(payload.roomId).emit('message-deleted', { messageId: payload.messageId });
+      saveData();
+    } catch (e) {
+      console.error('Delete message error:', e);
     }
   });
 
   socket.on('add-moderator', (payload) => {
     try {
+      const admin = users.get(socket.userId);
+      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
-      if (!room.moderators.includes(payload.userId)) room.moderators.push(payload.userId);
+      
+      if (!room.moderators.includes(payload.userId)) {
+        room.moderators.push(payload.userId);
+      }
+      
+      admin.lastActivity = Date.now();
       saveData();
       socket.emit('action-success', `${payload.username} is now moderator`);
     } catch (e) {
-      console.error('add-moderator error', e);
+      console.error('Add moderator error:', e);
     }
   });
 
   socket.on('remove-moderator', (payload) => {
     try {
+      const admin = users.get(socket.userId);
+      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
-      room.moderators = (room.moderators || []).filter(id => id !== payload.userId);
+      
+      room.moderators = room.moderators.filter(id => id !== payload.userId);
+      admin.lastActivity = Date.now();
+      
       saveData();
       socket.emit('action-success', `${payload.username} removed from moderators`);
     } catch (e) {
-      console.error('remove-moderator error', e);
+      console.error('Remove moderator error:', e);
     }
   });
 
-  // PRIVATE MESSAGES
-  socket.on('send-private-message', (payload) => {
-    try {
-      const sender = users.get(socket.userId);
-      const receiver = users.get(payload.toUserId);
-      if (!sender || !receiver) return socket.emit('error', 'Invalid users');
+  // ═══════════════════════════════════════════════════════════════
+  // SYSTEM SETTINGS
+  // ═══════════════════════════════════════════════════════════════
 
-      const receiverBlocked = blockedUsers.get(payload.toUserId) || new Set();
-      if (receiverBlocked.has(socket.userId)) {
-        return socket.emit('error', 'You are blocked by this user');
-      }
-
-      const message = {
-        id: 'pm_' + uuidv4(),
-        from: socket.userId,
-        to: payload.toUserId,
-        fromName: sender.displayName,
-        text: (payload.text || '').toString().substring(0, 1000),
-        timestamp: new Date().toLocaleTimeString(),
-        date: new Date().toISOString(),
-        edited: false
-      };
-
-      if (!privateMessages.has(socket.userId)) privateMessages.set(socket.userId, {});
-      const smap = privateMessages.get(socket.userId);
-      if (!smap[payload.toUserId]) smap[payload.toUserId] = [];
-      smap[payload.toUserId].push(message);
-
-      if (!privateMessages.has(payload.toUserId)) privateMessages.set(payload.toUserId, {});
-      const rmap = privateMessages.get(payload.toUserId);
-      if (!rmap[socket.userId]) rmap[socket.userId] = [];
-      rmap[socket.userId].push(message);
-
-      const receiverSocket = Array.from(io.sockets.sockets.values()).find(s => s.userId === payload.toUserId);
-      if (receiverSocket) receiverSocket.emit('new-private-message', message);
-
-      socket.emit('private-message-sent', message);
-      saveData();
-    } catch (e) {
-      console.error('send-private-message error', e);
-    }
-  });
-
-  socket.on('get-private-messages', (payload) => {
-    try {
-      const list = privateMessages.get(socket.userId)?.[payload.withUserId] || [];
-      socket.emit('private-messages-list', { withUserId: payload.withUserId, messages: list.slice(-200) });
-    } catch (e) {
-      console.error('get-private-messages error', e);
-    }
-  });
-
-  socket.on('block-user', (payload) => {
-    try {
-      if (!blockedUsers.has(socket.userId)) blockedUsers.set(socket.userId, new Set());
-      blockedUsers.get(socket.userId).add(payload.userId);
-      saveData();
-      socket.emit('action-success', 'User blocked');
-    } catch (e) {
-      console.error('block-user error', e);
-    }
-  });
-
-  socket.on('unblock-user', (payload) => {
-    try {
-      if (blockedUsers.has(socket.userId)) {
-        blockedUsers.get(socket.userId).delete(payload.userId);
-        saveData();
-      }
-      socket.emit('action-success', 'User unblocked');
-    } catch (e) {
-      console.error('unblock-user error', e);
-    }
-  });
-
-  // Continue to final part...
-      // ═══════════════════════════════════════════════════════════════
-// Cold Room V3.0 - Server Final Part
-// ═══════════════════════════════════════════════════════════════
-
-  // SUPPORT MESSAGES
-  socket.on('send-support-message', (payload) => {
-    try {
-      const id = 'support_' + uuidv4();
-      supportMessages.set(id, {
-        id,
-        from: payload.from || (socket.userId ? (users.get(socket.userId)?.displayName || 'User') : 'Anonymous'),
-        message: (payload.message || '').toString().substring(0, 1000),
-        sentAt: new Date().toISOString(),
-        fromIP: socket.userIP || ''
-      });
-      saveData();
-      socket.emit('support-message-sent', { message: 'Message sent' });
-    } catch (e) {
-      console.error('send-support-message error', e);
-    }
-  });
-
-  socket.on('get-support-messages', () => {
+  socket.on('update-settings', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      socket.emit('support-messages-list', Array.from(supportMessages.values()));
-    } catch (e) {
-      console.error('get-support-messages error', e);
-    }
-  });
-
-  socket.on('delete-support-message', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      supportMessages.delete(payload.messageId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      if (payload.siteLogo !== undefined) systemSettings.siteLogo = payload.siteLogo;
+      if (payload.siteTitle !== undefined) systemSettings.siteTitle = payload.siteTitle;
+      if (payload.backgroundColor !== undefined) systemSettings.backgroundColor = payload.backgroundColor;
+      if (payload.loginMusic !== undefined) systemSettings.loginMusic = payload.loginMusic;
+      if (payload.chatMusic !== undefined) systemSettings.chatMusic = payload.chatMusic;
+      if (payload.loginMusicVolume !== undefined) systemSettings.loginMusicVolume = Number(payload.loginMusicVolume) || 0.5;
+      if (payload.chatMusicVolume !== undefined) systemSettings.chatMusicVolume = Number(payload.chatMusicVolume) || 0.5;
+      if (payload.allowImageUpload !== undefined) systemSettings.allowImageUpload = payload.allowImageUpload;
+      if (payload.imageUploadMethod !== undefined) systemSettings.imageUploadMethod = payload.imageUploadMethod;
+      
+      user.lastActivity = Date.now();
       saveData();
-      socket.emit('action-success', 'Message deleted');
+      
+      io.emit('settings-updated', systemSettings);
+      socket.emit('action-success', 'Settings updated');
     } catch (e) {
-      console.error('delete-support-message error', e);
+      console.error('Update settings error:', e);
     }
   });
 
-  // LISTS
+  socket.on('toggle-user-image-permission', (payload) => {
+    try {
+      const admin = users.get(socket.userId);
+      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      
+      const target = users.get(payload.userId);
+      if (!target) return socket.emit('error', 'User not found');
+      
+      target.canSendImages = payload.allowed;
+      admin.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', `Image permission ${payload.allowed ? 'granted' : 'revoked'}`);
+    } catch (e) {
+      console.error('Toggle image permission error:', e);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // LISTS & SUPPORT
+  // ═══════════════════════════════════════════════════════════════
+
   socket.on('get-rooms', () => {
     try {
-      const roomList = Array.from(rooms.values()).map(room => ({
-        id: room.id,
-        name: room.name,
-        description: room.description,
-        userCount: (room.users || []).length,
-        hasPassword: !!room.hasPassword,
-        isOfficial: !!room.isOfficial,
-        createdBy: room.createdBy
+      const roomsArray = Array.from(rooms.values()).map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        userCount: (r.users || []).length,
+        hasPassword: !!r.hasPassword,
+        isOfficial: !!r.isOfficial,
+        createdBy: r.createdBy,
+        creatorId: r.creatorId
       })).sort((a, b) => {
         if (a.isOfficial && !b.isOfficial) return -1;
         if (!a.isOfficial && b.isOfficial) return 1;
         return b.userCount - a.userCount;
       });
-      socket.emit('rooms-list', roomList);
+      socket.emit('rooms-list', roomsArray);
     } catch (e) {
-      console.error('get-rooms error', e);
+      console.error('Get rooms error:', e);
     }
   });
 
@@ -1012,7 +1483,8 @@ io.on('connection', (socket) => {
     try {
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('users-list', []);
-      const list = (room.users || []).map(uid => {
+      
+      const usersArray = (room.users || []).map(uid => {
         const u = users.get(uid);
         if (!u) return null;
         return {
@@ -1023,22 +1495,25 @@ io.on('connection', (socket) => {
           profilePicture: u.profilePicture,
           isOnline: onlineUsers.has(u.id),
           isOwner: !!u.isOwner,
-          isModerator: room.moderators.includes(u.id),
-          specialBadges: u.specialBadges || []
+          isModerator: room.moderators.includes(u.id)
         };
       }).filter(Boolean);
-      socket.emit('users-list', list);
+      
+      socket.emit('users-list', usersArray);
     } catch (e) {
-      console.error('get-users error', e);
+      console.error('Get users error:', e);
     }
   });
 
   socket.on('get-muted-list', () => {
     try {
       const user = users.get(socket.userId);
-      if (!user || (!user.isOwner && !user.isModerator)) return socket.emit('error', 'No permission');
+      if (!user || (!user.isOwner && !user.isModerator)) {
+        return socket.emit('error', 'No permission');
+      }
       
-      let list = Array.from(mutedUsers.entries()).map(([uid, info]) => ({ userId: uid, ...info }));
+      let list = Array.from(mutedUsers.entries())
+        .map(([uid, info]) => ({ userId: uid, ...info }));
       
       if (user.isModerator && !user.isOwner) {
         list = list.filter(item => item.mutedById === socket.userId || !item.byOwner);
@@ -1046,251 +1521,47 @@ io.on('connection', (socket) => {
       
       socket.emit('muted-list', list);
     } catch (e) {
-      console.error('get-muted-list error', e);
+      console.error('Get muted list error:', e);
     }
   });
 
   socket.on('get-banned-list', () => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      const list = Array.from(bannedUsers.entries()).map(([uid, info]) => ({ userId: uid, ...info }));
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      const list = Array.from(bannedUsers.entries())
+        .map(([uid, info]) => ({ userId: uid, ...info }));
       socket.emit('banned-list', list);
     } catch (e) {
-      console.error('get-banned-list error', e);
+      console.error('Get banned list error:', e);
     }
   });
 
-  // DELETE ACCOUNT
-  socket.on('delete-account', (payload) => {
+  socket.on('send-support-message', (payload) => {
     try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
-      const target = users.get(payload.userId);
-      if (!target || target.isOwner) return socket.emit('error', 'Invalid target');
-
-      rooms.forEach(room => {
-        room.messages = (room.messages || []).filter(m => m.userId !== payload.userId);
-        room.users = (room.users || []).filter(u => u !== payload.userId);
-        room.moderators = (room.moderators || []).filter(m => m !== payload.userId);
+      const id = 'support_' + uuidv4();
+      supportMessages.set(id, {
+        id,
+        from: payload.from || 'Anonymous',
+        message: (payload.message || '').toString().substring(0, 1000),
+        sentAt: new Date().toISOString(),
+        fromIP: socket.userIP || ''
       });
-
-      users.delete(payload.userId);
-      privateMessages.delete(payload.userId);
-      mutedUsers.delete(payload.userId);
-      bannedUsers.delete(payload.userId);
-      blockedUsers.delete(payload.userId);
-
-      const targetSocket = Array.from(io.sockets.sockets.values()).find(s => s.userId === payload.userId);
-      if (targetSocket) {
-        try { targetSocket.emit('account-deleted', { message: 'Account deleted' }); targetSocket.disconnect(true); } catch {}
-      }
-      saveData();
-      updateRoomsList();
-      socket.emit('action-success', `Deleted: ${payload.userId}`);
-    } catch (e) {
-      console.error('delete-account error', e);
-    }
-  });
-
-  // DELETE MESSAGE
-  socket.on('delete-message', (payload) => {
-    try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
-      const room = rooms.get(payload.roomId);
-      if (!room) return socket.emit('error', 'Room not found');
-      room.messages = (room.messages || []).filter(m => m.id !== payload.messageId);
-      io.to(payload.roomId).emit('message-deleted', { messageId: payload.messageId });
-      saveData();
-    } catch (e) {
-      console.error('delete-message error', e);
-    }
-  });
-
-  // BULK OPERATIONS
-  socket.on('unmute-multiple', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      (payload.userIds || []).forEach(uid => mutedUsers.delete(uid));
-      saveData();
-      socket.emit('action-success', 'Users unmuted');
-    } catch (e) {
-      console.error('unmute-multiple error', e);
-    }
-  });
-
-  socket.on('unban-multiple', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      (payload.userIds || []).forEach(uid => bannedUsers.delete(uid));
-      saveData();
-      socket.emit('action-success', 'Users unbanned');
-    } catch (e) {
-      console.error('unban-multiple error', e);
-    }
-  });
-
-  // ROOM CONTROLS
-  socket.on('silence-room', (payload) => {
-    try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
-      const room = rooms.get(payload.roomId);
-      if (!room) return socket.emit('error', 'Room not found');
-      room.isSilenced = true;
-      io.to(payload.roomId).emit('room-silenced', { message: 'Room silenced', forceDisable: true });
-      saveData();
-    } catch (e) {
-      console.error('silence-room error', e);
-    }
-  });
-
-  socket.on('unsilence-room', (payload) => {
-    try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'No permission');
-      const room = rooms.get(payload.roomId);
-      if (!room) return socket.emit('error', 'Room not found');
-      room.isSilenced = false;
-      io.to(payload.roomId).emit('room-unsilenced', { message: 'Room unsilenced' });
-      saveData();
-    } catch (e) {
-      console.error('unsilence-room error', e);
-    }
-  });
-
-  // VIDEO WATCH
-  socket.on('start-video-watch', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      if (!payload || !payload.url) return socket.emit('error', 'Missing video URL');
       
-      systemSettings.video = {
-        url: payload.url.toString(),
-        type: payload.type || 'youtube',
-        startedAt: Date.now(),
-        size: payload.size || 'medium',
-        startedBy: user.displayName
-      };
-      
-      io.to('global_cold').emit('video-started', systemSettings.video);
-      saveData();
-    } catch (e) {
-      console.error('start-video-watch error', e);
-    }
-  });
-
-  socket.on('stop-video-watch', () => {
-    try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      systemSettings.video = null;
-      io.to('global_cold').emit('video-stopped');
-      saveData();
-    } catch (e) {
-      console.error('stop-video-watch error', e);
-    }
-  });
-
-  socket.on('video-resize', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      if (!systemSettings.video) return socket.emit('error', 'No video session');
-      systemSettings.video.size = payload.size || systemSettings.video.size || 'medium';
-      io.to('global_cold').emit('video-resize', { size: systemSettings.video.size });
-      saveData();
-    } catch (e) {
-      console.error('video-resize error', e);
-    }
-  });
-
-  // PARTY MODE
-  socket.on('toggle-party-mode', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      const room = rooms.get(payload.roomId || socket.currentRoom);
-      if (!user || !room) return socket.emit('error', 'Invalid request');
-      const allowed = user.isOwner || room.moderators.includes(socket.userId);
-      if (!allowed) return socket.emit('error', 'No permission');
-      setPartyMode(room.id, !!payload.enabled);
-    } catch (e) {
-      console.error('toggle-party-mode error', e);
-    }
-  });
-
-  // SETTINGS
-  socket.on('update-settings', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'No permission');
-      
-      if (payload.siteLogo !== undefined) systemSettings.siteLogo = payload.siteLogo;
-      if (payload.siteTitle !== undefined) systemSettings.siteTitle = payload.siteTitle;
-      if (payload.backgroundColor !== undefined) systemSettings.backgroundColor = payload.backgroundColor;
-      if (payload.loginMusic !== undefined) {
-        systemSettings.loginMusic = payload.loginMusic;
-        io.emit('settings-updated', systemSettings);
-      }
-      if (payload.chatMusic !== undefined) {
-        systemSettings.chatMusic = payload.chatMusic;
-        io.emit('settings-updated', systemSettings);
-      }
-      if (payload.loginMusicVolume !== undefined) systemSettings.loginMusicVolume = Number(payload.loginMusicVolume) || 0.5;
-      if (payload.chatMusicVolume !== undefined) systemSettings.chatMusicVolume = Number(payload.chatMusicVolume) || 0.5;
-      
-      if (payload.loginMusic === undefined && payload.chatMusic === undefined) {
-        io.emit('settings-updated', systemSettings);
-      }
+      if (user) user.lastActivity = Date.now();
       
       saveData();
-      socket.emit('action-success', 'Settings updated');
+      socket.emit('support-message-sent', { message: 'Message sent to owner' });
     } catch (e) {
-      console.error('update-settings error', e);
+      console.error('Send support message error:', e);
     }
   });
 
-  // PING
-  socket.on('ping', () => {
+  socket.on('get-support-messages', () => {
     try {
-      if (socket.userId) onlineUsers.set(socket.userId, Date.now());
-    } catch (e) {
-      console.error('ping error', e);
-    }
-  });
-
-  // DISCONNECT
-  socket.on('disconnect', () => {
-    try {
-      if (socket.userId) {
-        onlineUsers.delete(socket.userId);
-        rooms.forEach(room => {
-          room.users = (room.users || []).filter(u => u !== socket.userId);
-        });
-      }
-      console.log('🔌 Disconnect:', socket.id);
-    } catch (e) {
-      console.error('disconnect error', e);
-    }
-  });
-});
-
-// Periodic autosave
-setInterval(() => {
-  try { saveData(); } catch (e) { console.error(e); }
-}, 30000);
-
-// Start server
-server.listen(PORT, () => {
-  console.log(`🚀 Cold Room V3.0 server running on port ${PORT}`);
-  console.log(`✅ All features enabled and ready!`);
-});
-
-// ═══════════════════════════════════════════════════════════════
-// END - Cold Room V3.0 Complete Server
-// © 2025 Cold Room - All Rights Reserved
-// ═══════════════════════════════════════════════════════════════
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      socket.emit
