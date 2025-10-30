@@ -58,22 +58,13 @@ tmp/
 temp/
 *.tmp
 
-# Database (if added later)
-*.db
-*.sqlite
-*.sqlite3
-
-# Uploads (if stored locally)
-uploads/
-public/uploads/
-
-# Sensitive data
-config/secrets.js
-secrets.json
+# Database - Keep data file for persistence
+# Uncomment next line if you don't want to commit data
+# cold_room_data.json
 
 # Backup files
 *.bak
 *.backup
 *~
 
-# © 2025 MOBO - Protected Files
+# © 2025 Cold Room - All Rights Reserved
