@@ -1565,19 +1565,3 @@ server.listen(PORT, () => {
       if (!user?.isOwner) return socket.emit('error', 'Owner only');
       
       socket.emit
-          }
-  });
-setInterval(() => {
-  try { saveData(); } catch (e) { console.error(e); }
-}, 30000);
-
-server.listen(PORT, () => {
-  console.log(`🚀 Cold Room V3.0 running on port ${PORT}`);
-  console.log(`✅ Owner: COLDKING / ColdKing@2025`);
-  console.log(`✅ All features ready!`);
-});
-
-// ═══════════════════════════════════════════════════════════════
-// END - Cold Room V3.0 Complete Server
-// © 2025 Cold Room - All Rights Reserved
-// ═══════════════════════════════════════════════════════════════
