@@ -1,4 +1,23 @@
 // ═══════════════════════════════════════════════════════════════
+// Cold Room client - header (ensure socket declared before use)
+// ═══════════════════════════════════════════════════════════════
+
+let socket = null;
+let currentUser = null;
+let currentRoom = null;
+let systemSettings = {};
+let selectedUserId = null;
+let selectedUsername = null;
+let currentPrivateChatUser = null;
+let confirmCallback = null;
+let editingRoomId = null;
+let isReconnecting = false;
+let blockedUsers = new Set();
+let replyToMessage = null;
+let longPressTimer = null;
+let selectedRoomForActions = null;
+
+// ═══════════════════════════════════════════════════════════════
 // USER ACTIONS
 // ═══════════════════════════════════════════════════════════════
 
@@ -7,6 +26,7 @@ window.showMuteDialog = function() {
     if (duration === null) return;
     const reason = prompt('Reason:', 'Rule violation');
     if (!reason) return;
+    if (!socket) return showAlert('Not connected', 'error');
     socket.emit('mute-user', {
         userId: selectedUserId,
         username: selectedUsername,
@@ -19,27 +39,34 @@ window.showMuteDialog = function() {
 window.banUser = function() {
     if (!confirm(`Ban ${selectedUsername}?`)) return;
     const reason = prompt('Reason:', 'Serious violation');
-    if (reason) socket.emit('ban-user', { userId: selectedUserId, username: selectedUsername, reason });
+    if (reason) {
+        if (!socket) return showAlert('Not connected', 'error');
+        socket.emit('ban-user', { userId: selectedUserId, username: selectedUsername, reason });
+    }
 };
 
 window.deleteAccount = function() {
     if (!confirm(`⚠️ DELETE ${selectedUsername}? This CANNOT be undone!`)) return;
+    if (!socket) return showAlert('Not connected', 'error');
     socket.emit('delete-account', { userId: selectedUserId });
 };
 
 window.addModerator = function() {
     if (!confirm(`Add ${selectedUsername} as moderator?`)) return;
+    if (!socket) return showAlert('Not connected', 'error');
     socket.emit('add-moderator', { userId: selectedUserId, username: selectedUsername, roomId: currentRoom });
 };
 
 window.removeModerator = function() {
     if (!confirm(`Remove ${selectedUsername} from moderators?`)) return;
+    if (!socket) return showAlert('Not connected', 'error');
     socket.emit('remove-moderator', { userId: selectedUserId, username: selectedUsername, roomId: currentRoom });
 };
 
 function showActionsMenu(actions) {
     const menu = document.getElementById('message-actions-menu');
     const list = document.getElementById('message-actions-list');
+    if (!menu || !list) return;
     list.innerHTML = '';
     
     actions.forEach(action => {
@@ -58,26 +85,42 @@ function showActionsMenu(actions) {
 }
 
 function hideActionsMenu() {
-    document.getElementById('message-actions-menu').style.display = 'none';
+    const menu = document.getElementById('message-actions-menu');
+    if (menu) menu.style.display = 'none';
 }
 
 // ═══════════════════════════════════════════════════════════════
 // MEDIA UPLOAD
 // ═══════════════════════════════════════════════════════════════
 
-window.showImageUpload = () => document.getElementById('image-upload-modal').classList.add('active');
+window.showImageUpload = () => {
+    const el = document.getElementById('image-upload-modal');
+    if (el) el.classList.add('active');
+};
 window.sendImageMessage = function() {
-    const url = document.getElementById('image-url-input').value.trim();
+    const urlEl = document.getElementById('image-url-input');
+    const url = urlEl ? urlEl.value.trim() : '';
     if (!url) return showAlert('Enter image URL', 'error');
+    if (!socket) return showAlert('Not connected', 'error');
     socket.emit('send-image', { imageUrl: url });
-    document.getElementById('image-url-input').value = '';
+    if (urlEl) urlEl.value = '';
     hideModal('image-upload-modal');
 };
 
-window.showVideoUpload = () => document.getElementById('video-upload-modal').classList.add('active');
+window.showVideoUpload = () => {
+    const el = document.getElementById('video-upload-modal');
+    if (el) el.classList.add('active');
+};
 window.sendVideoMessage = function() {
-    const url = document.getElementById('video-url-input').value.trim();
+    const urlEl = document.getElementById('video-url-input');
+    const url = urlEl ? urlEl.value.trim() : '';
     if (!url) return showAlert('Enter video URL', 'error');
+    if (!url.toLowerCase().endsWith('.mp4')) return showAlert('MP4 only', 'error');
+    if (!socket) return showAlert('Not connected', 'error');
+    socket.emit('send-video', { videoUrl: url });
+    if (urlEl) urlEl.value = '';
+    hideModal('video-upload-modal');
+};
     if (!url.toLowerCase().endsWith('.mp4')) return showAlert('MP4 only', 'error');
     socket.emit('send-video', { videoUrl: url });
     document.getElementById('video-url-input').value = '';
