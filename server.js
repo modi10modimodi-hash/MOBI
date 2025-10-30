@@ -1564,4 +1564,4 @@ server.listen(PORT, () => {
       const user = users.get(socket.userId);
       if (!user?.isOwner) return socket.emit('error', 'Owner only');
       
-      socket.emit
+
