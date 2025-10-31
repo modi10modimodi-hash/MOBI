@@ -27,7 +27,6 @@ app.use(express.json({ limit: '100mb' }));
 
 const DATA_FILE = 'cold_room_data.json';
 
-// System Settings
 let systemSettings = {
   siteLogo: 'https://j.top4top.io/p_3585vud691.jpg',
   siteTitle: 'Cold Room',
@@ -37,10 +36,9 @@ let systemSettings = {
   loginMusicVolume: 0.5,
   chatMusicVolume: 0.5,
   allowImageUpload: true,
-  imageUploadMethod: 'both' // 'url', 'file', 'both'
+  imageUploadMethod: 'both'
 };
 
-// Data storage
 const users = new Map();
 const rooms = new Map();
 const mutedUsers = new Map();
@@ -49,11 +47,6 @@ const privateMessages = new Map();
 const supportMessages = new Map();
 const onlineUsers = new Map();
 const blockedUsers = new Map();
-const messageReadStatus = new Map(); // For read receipts
-
-// ═══════════════════════════════════════════════════════════════
-// DATA PERSISTENCE
-// ═══════════════════════════════════════════════════════════════
 
 function loadData() {
   try {
@@ -66,7 +59,6 @@ function loadData() {
         users.set(k, v);
       });
       Object.entries(loaded.rooms || {}).forEach(([k,v]) => {
-        // Keep only last 50 messages per room
         if (v.messages && v.messages.length > 50) {
           v.messages = v.messages.slice(-50);
         }
@@ -75,7 +67,6 @@ function loadData() {
       Object.entries(loaded.mutedUsers || {}).forEach(([k,v]) => mutedUsers.set(k, v));
       Object.entries(loaded.bannedUsers || {}).forEach(([k,v]) => bannedUsers.set(k, v));
       Object.entries(loaded.privateMessages || {}).forEach(([k,v]) => {
-        // Keep only last 50 messages per conversation
         const cleanedMessages = {};
         Object.entries(v).forEach(([userId, msgs]) => {
           cleanedMessages[userId] = msgs.slice(-50);
@@ -85,13 +76,11 @@ function loadData() {
       Object.entries(loaded.supportMessages || {}).forEach(([k,v]) => supportMessages.set(k, v));
       Object.entries(loaded.blockedUsers || {}).forEach(([k,v]) => blockedUsers.set(k, new Set(v)));
       
-      systemSettings = { ...systemSettings, ...(loaded.systemSettings || {}) };
-      console.log('✅ Data loaded successfully');
-    } else {
-      console.log('⚠️ No data file found, starting fresh');
+      systemSettings = Object.assign({}, systemSettings, loaded.systemSettings || {});
+      console.log('✅ Data loaded');
     }
   } catch (e) {
-    console.error('❌ Error loading data:', e);
+    console.error('❌ Load error:', e);
   }
 }
 
@@ -107,17 +96,13 @@ function saveData() {
       blockedUsers: Object.fromEntries(
         Array.from(blockedUsers.entries()).map(([k, v]) => [k, Array.from(v)])
       ),
-      systemSettings
+      systemSettings: systemSettings
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(toSave, null, 2), 'utf8');
   } catch (e) {
-    console.error('❌ Error saving data:', e);
+    console.error('❌ Save error:', e);
   }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// INITIALIZE OWNER & GLOBAL ROOM
-// ═══════════════════════════════════════════════════════════════
 
 function createOwnerIfMissing() {
   const ownerId = 'owner_cold_001';
@@ -140,7 +125,7 @@ function createOwnerIfMissing() {
     users.set(ownerId, owner);
     privateMessages.set(ownerId, {});
     blockedUsers.set(ownerId, new Set());
-    console.log('✅ Owner created: COLDKING / ColdKing@2025');
+    console.log('✅ Owner created');
   }
 }
 
@@ -170,16 +155,12 @@ function createGlobalRoomIfMissing() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CLEANUP INACTIVE USERS (10 days)
-// ═══════════════════════════════════════════════════════════════
-
 function cleanupInactiveUsers() {
   const tenDaysAgo = Date.now() - (10 * 24 * 60 * 60 * 1000);
   const toDelete = [];
   
   for (const [userId, user] of users.entries()) {
-    if (user.isOwner) continue; // Never delete owner
+    if (user.isOwner) continue;
     if (user.lastActivity && user.lastActivity < tenDaysAgo) {
       toDelete.push(userId);
     }
@@ -199,33 +180,20 @@ function cleanupInactiveUsers() {
   });
   
   if (toDelete.length > 0) {
-    console.log(`🧹 Cleaned ${toDelete.length} inactive users`);
+    console.log('🧹 Cleaned ' + toDelete.length + ' inactive users');
     saveData();
   }
 }
 
-// Run cleanup every 24 hours
 setInterval(cleanupInactiveUsers, 24 * 60 * 60 * 1000);
-
-// ═══════════════════════════════════════════════════════════════
-// INITIALIZE DATA
-// ═══════════════════════════════════════════════════════════════
 
 loadData();
 createOwnerIfMissing();
 createGlobalRoomIfMissing();
 saveData();
 
-// ═══════════════════════════════════════════════════════════════
-// ROUTES
-// ═══════════════════════════════════════════════════════════════
-
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/settings', (req, res) => res.json(systemSettings));
-
-// ═══════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════
 
 function updateRoomsList() {
   const roomsArray = Array.from(rooms.values()).map(r => ({
@@ -262,34 +230,26 @@ function updateUsersList(roomId) {
   io.to(roomId).emit('users-list', usersArray);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SOCKET CONNECTION
-// ═══════════════════════════════════════════════════════════════
-
 io.on('connection', (socket) => {
-  console.log('🔗 New connection:', socket.id);
+  console.log('🔗 Connection:', socket.id);
   socket.userIP = socket.handshake.address || '';
-
-  // ═══════════════════════════════════════════════════════════════
-  // AUTHENTICATION
-  // ═══════════════════════════════════════════════════════════════
 
   socket.on('login', (payload) => {
     try {
-      const { username, password } = payload || {};
+      const username = payload.username;
+      const password = payload.password;
       if (!username || !password) return socket.emit('login-error', 'Missing credentials');
 
       let foundId = null;
       for (const [id, u] of users.entries()) {
-        if (u.username.toLowerCase() === username.toLowerCase() &&
-            bcrypt.compareSync(password, u.password)) {
+        if (u.username.toLowerCase() === username.toLowerCase() && bcrypt.compareSync(password, u.password)) {
           foundId = id;
           break;
         }
       }
       
       if (!foundId) return socket.emit('login-error', 'Invalid credentials');
-      if (bannedUsers.has(foundId)) return socket.emit('banned-user', { reason: 'You are banned' });
+      if (bannedUsers.has(foundId)) return socket.emit('banned-user', { reason: 'Banned' });
 
       const user = users.get(foundId);
       user.lastActivity = Date.now();
@@ -308,122 +268,7 @@ io.on('connection', (socket) => {
 
       const userBlockedList = blockedUsers.get(foundId) || new Set();
 
-      socket.emit('support-messages-list', Array.from(supportMessages.values()));
-    } catch (e) {
-      console.error('Get support messages error:', e);
-    }
-  });
-
-  socket.on('delete-support-message', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
-      
-      supportMessages.delete(payload.messageId);
-      user.lastActivity = Date.now();
-      
-      saveData();
-      socket.emit('action-success', 'Message deleted');
-    } catch (e) {
-      console.error('Delete support message error:', e);
-    }
-  });
-
-  socket.on('unmute-multiple', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
-      
-      (payload.userIds || []).forEach(uid => mutedUsers.delete(uid));
-      user.lastActivity = Date.now();
-      
-      saveData();
-      socket.emit('action-success', 'Users unmuted');
-    } catch (e) {
-      console.error('Unmute multiple error:', e);
-    }
-  });
-
-  socket.on('unban-multiple', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
-      
-      (payload.userIds || []).forEach(uid => bannedUsers.delete(uid));
-      user.lastActivity = Date.now();
-      
-      saveData();
-      socket.emit('action-success', 'Users unbanned');
-    } catch (e) {
-      console.error('Unban multiple error:', e);
-    }
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // HEARTBEAT & DISCONNECT
-  // ═══════════════════════════════════════════════════════════════
-
-  socket.on('ping', () => {
-    try {
-      if (socket.userId) {
-        onlineUsers.set(socket.userId, Date.now());
-        const user = users.get(socket.userId);
-        if (user) user.lastActivity = Date.now();
-      }
-    } catch (e) {
-      console.error('Ping error:', e);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    try {
-      if (socket.userId) {
-        onlineUsers.delete(socket.userId);
-        rooms.forEach(room => {
-          room.users = (room.users || []).filter(u => u !== socket.userId);
-        });
-      }
-      console.log('🔌 Disconnect:', socket.id);
-    } catch (e) {
-      console.error('Disconnect error:', e);
-    }
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
-// AUTO-SAVE & CLEANUP
-// ═══════════════════════════════════════════════════════════════
-
-// Auto-save every 30 seconds
-setInterval(() => {
-  try {
-    saveData();
-  } catch (e) {
-    console.error('Auto-save error:', e);
-  }
-}, 30000);
-
-// Keep server alive (for hosting platforms)
-setInterval(() => {
-  console.log('🔄 Server alive -', new Date().toISOString());
-}, 5 * 60 * 1000); // Every 5 minutes
-
-// ═══════════════════════════════════════════════════════════════
-// START SERVER
-// ═══════════════════════════════════════════════════════════════
-
-server.listen(PORT, () => {
-  console.log(`🚀 Cold Room V3.0 - Server running on port ${PORT}`);
-  console.log(`✅ Owner: COLDKING / ColdKing@2025`);
-  console.log(`✅ All features enabled!`);
-  console.log(`✅ Data persistence: ACTIVE`);
-  console.log(`✅ Auto-cleanup: ACTIVE (10 days inactivity)`);
-});
-
-// ═══════════════════════════════════════════════════════════════
-// END - Cold Room V3.0 Complete Server
-// © 2025 Cold Room - All Rights Reserved
-// ═══════════════════════════════════════════════════════════════('login-success', {
+      socket.emit('login-success', {
         user: {
           id: foundId,
           username: user.username,
@@ -447,7 +292,7 @@ server.listen(PORT, () => {
           musicUrl: globalRoom.musicUrl,
           musicVolume: globalRoom.musicVolume || 0.5
         },
-        systemSettings,
+        systemSettings: systemSettings,
         blockedUsers: Array.from(userBlockedList)
       });
 
@@ -462,25 +307,29 @@ server.listen(PORT, () => {
 
   socket.on('register', (payload) => {
     try {
-      const { username, password, displayName, gender } = payload || {};
+      const username = payload.username;
+      const password = payload.password;
+      const displayName = payload.displayName;
+      const gender = payload.gender;
+      
       if (!username || !password || !displayName || !gender) {
         return socket.emit('register-error', 'Missing fields');
       }
 
       for (const u of users.values()) {
         if (u.username.toLowerCase() === username.toLowerCase()) {
-          return socket.emit('register-error', 'Username already exists');
+          return socket.emit('register-error', 'Username exists');
         }
         if (u.displayName.toLowerCase() === displayName.toLowerCase()) {
-          return socket.emit('register-error', 'Display name already taken');
+          return socket.emit('register-error', 'Display name taken');
         }
       }
 
       const userId = 'user_' + uuidv4();
       const newUser = {
         id: userId,
-        username,
-        displayName,
+        username: username,
+        displayName: displayName,
         password: bcrypt.hashSync(password, 10),
         isOwner: false,
         joinDate: new Date().toISOString(),
@@ -498,16 +347,12 @@ server.listen(PORT, () => {
       blockedUsers.set(userId, new Set());
       saveData();
       
-      socket.emit('register-success', { message: 'Account created successfully!', username });
+      socket.emit('register-success', { message: 'Account created!', username: username });
     } catch (e) {
       console.error('Register error:', e);
       socket.emit('register-error', 'Server error');
     }
   });
-
-  // ═══════════════════════════════════════════════════════════════
-  // PROFILE MANAGEMENT
-  // ═══════════════════════════════════════════════════════════════
 
   socket.on('update-profile-picture', (payload) => {
     try {
@@ -535,21 +380,21 @@ server.listen(PORT, () => {
       const user = users.get(socket.userId);
       if (!user) return socket.emit('error', 'Not authenticated');
       
-      const newName = (payload.newName || '').toString().trim();
+      const newName = String(payload.newName || '').trim();
       if (!newName || newName.length < 3 || newName.length > 30) {
         return socket.emit('error', 'Name must be 3-30 characters');
       }
 
       for (const [id, u] of users.entries()) {
         if (id !== socket.userId && u.displayName.toLowerCase() === newName.toLowerCase()) {
-          return socket.emit('error', 'Display name already taken');
+          return socket.emit('error', 'Display name taken');
         }
       }
 
       if (user.isOwner) {
         user.displayName = newName;
         user.lastActivity = Date.now();
-        socket.emit('action-success', 'Name changed successfully');
+        socket.emit('action-success', 'Name changed');
         saveData();
         if (socket.currentRoom) updateUsersList(socket.currentRoom);
         return;
@@ -565,17 +410,13 @@ server.listen(PORT, () => {
       user.lastActivity = Date.now();
       
       const remaining = 2 - user.nameChangeCount;
-      socket.emit('action-success', `Name changed! ${remaining} changes remaining`);
+      socket.emit('action-success', 'Name changed! ' + remaining + ' changes remaining');
       saveData();
       if (socket.currentRoom) updateUsersList(socket.currentRoom);
     } catch (e) {
       console.error('Change name error:', e);
     }
   });
-
-  // ═══════════════════════════════════════════════════════════════
-  // MESSAGING
-  // ═══════════════════════════════════════════════════════════════
 
   socket.on('send-message', (payload) => {
     try {
@@ -599,7 +440,7 @@ server.listen(PORT, () => {
         username: user.displayName,
         avatar: user.avatar,
         profilePicture: user.profilePicture,
-        text: (payload.text || '').toString().substring(0, 1000),
+        text: String(payload.text || '').substring(0, 1000),
         timestamp: new Date().toLocaleTimeString(),
         date: new Date().toISOString(),
         isOwner: !!user.isOwner,
@@ -614,7 +455,6 @@ server.listen(PORT, () => {
       room.messages = room.messages || [];
       room.messages.push(message);
       
-      // Keep only last 50 messages
       if (room.messages.length > 50) {
         room.messages = room.messages.slice(-50);
       }
@@ -637,7 +477,7 @@ server.listen(PORT, () => {
       
       if (idx === -1) return socket.emit('error', 'Message not found');
       
-      room.messages[idx].text = (payload.newText || '').toString().substring(0, 1000);
+      room.messages[idx].text = String(payload.newText || '').substring(0, 1000);
       room.messages[idx].edited = true;
       
       io.to(socket.currentRoom).emit('message-edited', {
@@ -658,7 +498,7 @@ server.listen(PORT, () => {
     try {
       const user = users.get(socket.userId);
       if (!user || !user.canSendImages) {
-        return socket.emit('error', 'No permission to send images');
+        return socket.emit('error', 'No permission');
       }
       
       const room = rooms.get(socket.currentRoom);
@@ -700,7 +540,7 @@ server.listen(PORT, () => {
     try {
       const user = users.get(socket.userId);
       if (!user || !user.canSendVideos) {
-        return socket.emit('error', 'No permission to send videos');
+        return socket.emit('error', 'No permission');
       }
       
       const room = rooms.get(socket.currentRoom);
@@ -738,20 +578,15 @@ server.listen(PORT, () => {
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // PRIVATE MESSAGES
-  // ═══════════════════════════════════════════════════════════════
-
   socket.on('send-private-message', (payload) => {
     try {
       const sender = users.get(socket.userId);
       const receiver = users.get(payload.toUserId);
       if (!sender || !receiver) return socket.emit('error', 'Invalid users');
 
-      // Check if sender is blocked
       const receiverBlocked = blockedUsers.get(payload.toUserId) || new Set();
       if (receiverBlocked.has(socket.userId) && !sender.isOwner) {
-        return socket.emit('error', 'You are blocked by this user');
+        return socket.emit('error', 'You are blocked');
       }
 
       sender.lastActivity = Date.now();
@@ -761,7 +596,7 @@ server.listen(PORT, () => {
         from: socket.userId,
         to: payload.toUserId,
         fromName: sender.displayName,
-        text: (payload.text || '').toString().substring(0, 1000),
+        text: String(payload.text || '').substring(0, 1000),
         timestamp: new Date().toLocaleTimeString(),
         date: new Date().toISOString(),
         edited: false,
@@ -769,18 +604,15 @@ server.listen(PORT, () => {
         replyTo: payload.replyTo || null
       };
 
-      // Save to sender's messages
       if (!privateMessages.has(socket.userId)) privateMessages.set(socket.userId, {});
       const smap = privateMessages.get(socket.userId);
       if (!smap[payload.toUserId]) smap[payload.toUserId] = [];
       smap[payload.toUserId].push(message);
       
-      // Keep only last 50 messages
       if (smap[payload.toUserId].length > 50) {
         smap[payload.toUserId] = smap[payload.toUserId].slice(-50);
       }
 
-      // Save to receiver's messages
       if (!privateMessages.has(payload.toUserId)) privateMessages.set(payload.toUserId, {});
       const rmap = privateMessages.get(payload.toUserId);
       if (!rmap[socket.userId]) rmap[socket.userId] = [];
@@ -790,7 +622,6 @@ server.listen(PORT, () => {
         rmap[socket.userId] = rmap[socket.userId].slice(-50);
       }
 
-      // Send to receiver if online
       const receiverSocket = Array.from(io.sockets.sockets.values())
         .find(s => s.userId === payload.toUserId);
       if (receiverSocket) {
@@ -808,7 +639,6 @@ server.listen(PORT, () => {
     try {
       const list = privateMessages.get(socket.userId)?.[payload.withUserId] || [];
       
-      // Mark messages as read
       list.forEach(msg => {
         if (msg.to === socket.userId) {
           msg.read = true;
@@ -831,9 +661,8 @@ server.listen(PORT, () => {
       const user = users.get(socket.userId);
       const targetUser = users.get(payload.userId);
       
-      // Owner cannot be blocked
       if (targetUser && targetUser.isOwner) {
-        return socket.emit('error', 'Cannot block the owner');
+        return socket.emit('error', 'Cannot block owner');
       }
       
       if (!blockedUsers.has(socket.userId)) {
@@ -866,10 +695,6 @@ server.listen(PORT, () => {
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // ROOM MANAGEMENT
-  // ═══════════════════════════════════════════════════════════════
-
   socket.on('create-room', (payload) => {
     try {
       const user = users.get(socket.userId);
@@ -880,15 +705,15 @@ server.listen(PORT, () => {
       const roomId = 'room_' + uuidv4();
       const newRoom = {
         id: roomId,
-        name: (payload.name || 'Untitled').toString().substring(0, 100),
-        description: (payload.description || '').toString().substring(0, 500),
+        name: String(payload.name || 'Untitled').substring(0, 100),
+        description: String(payload.description || '').substring(0, 500),
         createdBy: user.displayName,
         creatorId: socket.userId,
         users: [socket.userId],
         messages: [],
         isOfficial: false,
         hasPassword: !!payload.password,
-        password: payload.password ? bcrypt.hashSync(payload.password.toString(), 10) : null,
+        password: payload.password ? bcrypt.hashSync(String(payload.password), 10) : null,
         moderators: [],
         isSilenced: false,
         createdAt: new Date().toISOString(),
@@ -902,7 +727,7 @@ server.listen(PORT, () => {
       socket.join(roomId);
       socket.currentRoom = roomId;
       
-      socket.emit('room-created', { roomId, roomName: newRoom.name });
+      socket.emit('room-created', { roomId: roomId, roomName: newRoom.name });
       updateRoomsList();
       saveData();
     } catch (e) {
@@ -918,14 +743,12 @@ server.listen(PORT, () => {
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
 
-      // Check password
       if (room.hasPassword && !user.isOwner) {
-        if (!payload.password || !bcrypt.compareSync(payload.password.toString(), room.password)) {
+        if (!payload.password || !bcrypt.compareSync(String(payload.password), room.password)) {
           return socket.emit('error', 'Wrong password');
         }
       }
 
-      // Leave previous room
       if (socket.currentRoom) {
         const prev = rooms.get(socket.currentRoom);
         if (prev) {
@@ -934,7 +757,6 @@ server.listen(PORT, () => {
         socket.leave(socket.currentRoom);
       }
 
-      // Join new room
       if (!room.users.includes(socket.userId)) {
         room.users.push(socket.userId);
       }
@@ -974,20 +796,19 @@ server.listen(PORT, () => {
       
       if (!room) return socket.emit('error', 'Room not found');
       
-      // Only owner or room creator can update
       if (!user.isOwner && room.creatorId !== socket.userId) {
         return socket.emit('error', 'No permission');
       }
       
       if (payload.name !== undefined) {
-        room.name = payload.name.toString().substring(0, 100);
+        room.name = String(payload.name).substring(0, 100);
       }
       if (payload.description !== undefined) {
-        room.description = payload.description.toString().substring(0, 500);
+        room.description = String(payload.description).substring(0, 500);
       }
       if (payload.password !== undefined) {
         room.hasPassword = !!payload.password;
-        room.password = payload.password ? bcrypt.hashSync(payload.password.toString(), 10) : null;
+        room.password = payload.password ? bcrypt.hashSync(String(payload.password), 10) : null;
       }
       
       user.lastActivity = Date.now();
@@ -1011,16 +832,15 @@ server.listen(PORT, () => {
       const room = rooms.get(payload.roomId);
       
       if (!room || room.isOfficial) {
-        return socket.emit('error', 'Cannot delete this room');
+        return socket.emit('error', 'Cannot delete');
       }
       
-      // Only owner or room creator can delete
       if (!user.isOwner && room.creatorId !== socket.userId) {
         return socket.emit('error', 'No permission');
       }
       
       io.to(payload.roomId).emit('room-deleted', { 
-        message: 'Room has been deleted' 
+        message: 'Room deleted' 
       });
       
       rooms.delete(payload.roomId);
@@ -1037,7 +857,7 @@ server.listen(PORT, () => {
   socket.on('silence-room', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -1046,7 +866,7 @@ server.listen(PORT, () => {
       user.lastActivity = Date.now();
       
       io.to(payload.roomId).emit('room-silenced', { 
-        message: 'Room has been silenced', 
+        message: 'Room silenced', 
         forceDisable: true 
       });
       
@@ -1059,7 +879,7 @@ server.listen(PORT, () => {
   socket.on('unsilence-room', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -1068,7 +888,7 @@ server.listen(PORT, () => {
       user.lastActivity = Date.now();
       
       io.to(payload.roomId).emit('room-unsilenced', { 
-        message: 'Room silencing removed' 
+        message: 'Room unsilenced' 
       });
       
       saveData();
@@ -1080,7 +900,7 @@ server.listen(PORT, () => {
   socket.on('clean-chat', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -1089,7 +909,7 @@ server.listen(PORT, () => {
       user.lastActivity = Date.now();
       
       io.to(payload.roomId).emit('chat-cleaned', { 
-        message: 'Chat has been cleaned' 
+        message: 'Chat cleaned' 
       });
       
       saveData();
@@ -1101,7 +921,7 @@ server.listen(PORT, () => {
   socket.on('clean-all-rooms', () => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       rooms.forEach(room => {
         room.messages = [];
@@ -1117,10 +937,6 @@ server.listen(PORT, () => {
       console.error('Clean all rooms error:', e);
     }
   });
-
-  // ═══════════════════════════════════════════════════════════════
-  // ROOM MEDIA (Per-Room Video & Music)
-  // ═══════════════════════════════════════════════════════════════
 
   socket.on('get-room-media', (payload) => {
     try {
@@ -1141,7 +957,7 @@ server.listen(PORT, () => {
   socket.on('update-room-media', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -1152,7 +968,7 @@ server.listen(PORT, () => {
           roomId: payload.roomId,
           type: 'video',
           videoUrl: room.videoUrl,
-          message: room.videoUrl ? 'Room video updated' : 'Room video removed'
+          message: room.videoUrl ? 'Video updated' : 'Video removed'
         });
       } else if (payload.type === 'music') {
         room.musicUrl = payload.musicUrl || null;
@@ -1162,7 +978,7 @@ server.listen(PORT, () => {
           type: 'music',
           musicUrl: room.musicUrl,
           musicVolume: room.musicVolume,
-          message: room.musicUrl ? 'Room music updated' : 'Room music removed'
+          message: room.musicUrl ? 'Music updated' : 'Music removed'
         });
       }
 
@@ -1173,10 +989,6 @@ server.listen(PORT, () => {
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // PARTY MODE (Per-Room)
-  // ═══════════════════════════════════════════════════════════════
-
   socket.on('toggle-party-mode', (payload) => {
     try {
       const user = users.get(socket.userId);
@@ -1184,7 +996,6 @@ server.listen(PORT, () => {
       
       if (!user || !room) return socket.emit('error', 'Invalid request');
       
-      // Only owner or moderators can toggle
       const allowed = user.isOwner || room.moderators.includes(socket.userId);
       if (!allowed) return socket.emit('error', 'No permission');
       
@@ -1202,10 +1013,6 @@ server.listen(PORT, () => {
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // MODERATION
-  // ═══════════════════════════════════════════════════════════════
-
   socket.on('mute-user', (payload) => {
     try {
       const admin = users.get(socket.userId);
@@ -1219,7 +1026,7 @@ server.listen(PORT, () => {
       
       mutedUsers.set(payload.userId, {
         username: target.displayName,
-        expires,
+        expires: expires,
         reason: payload.reason || 'Rule violation',
         mutedBy: admin.displayName,
         mutedById: socket.userId,
@@ -1230,7 +1037,7 @@ server.listen(PORT, () => {
       
       admin.lastActivity = Date.now();
       saveData();
-      socket.emit('action-success', `Muted ${target.displayName}`);
+      socket.emit('action-success', 'Muted ' + target.displayName);
     } catch (e) {
       console.error('Mute user error:', e);
     }
@@ -1258,7 +1065,7 @@ server.listen(PORT, () => {
         return socket.emit('action-success', 'User unmuted');
       }
 
-      socket.emit('error', 'You can only unmute users you muted');
+      socket.emit('error', 'Cannot unmute');
     } catch (e) {
       console.error('Unmute user error:', e);
     }
@@ -1269,7 +1076,7 @@ server.listen(PORT, () => {
       const admin = users.get(socket.userId);
       const target = users.get(payload.userId);
       
-      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      if (!admin || !admin.isOwner) return socket.emit('error', 'Owner only');
       if (!target || target.isOwner) return socket.emit('error', 'Invalid target');
       
       bannedUsers.set(payload.userId, {
@@ -1288,10 +1095,10 @@ server.listen(PORT, () => {
         try {
           targetSocket.emit('banned', { reason: payload.reason || 'Violation' });
           targetSocket.disconnect(true);
-        } catch {}
+        } catch (err) {}
       }
       
-      socket.emit('action-success', `Banned ${target.displayName}`);
+      socket.emit('action-success', 'Banned ' + target.displayName);
     } catch (e) {
       console.error('Ban user error:', e);
     }
@@ -1300,7 +1107,7 @@ server.listen(PORT, () => {
   socket.on('unban-user', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       bannedUsers.delete(payload.userId);
       user.lastActivity = Date.now();
@@ -1314,12 +1121,11 @@ server.listen(PORT, () => {
   socket.on('delete-account', (payload) => {
     try {
       const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      if (!admin || !admin.isOwner) return socket.emit('error', 'Owner only');
       
       const target = users.get(payload.userId);
       if (!target || target.isOwner) return socket.emit('error', 'Invalid target');
 
-      // Remove from all rooms
       rooms.forEach(room => {
         room.messages = room.messages.filter(m => m.userId !== payload.userId);
         room.users = room.users.filter(u => u !== payload.userId);
@@ -1338,7 +1144,7 @@ server.listen(PORT, () => {
         try {
           targetSocket.emit('account-deleted', { message: 'Account deleted' });
           targetSocket.disconnect(true);
-        } catch {}
+        } catch (err) {}
       }
       
       admin.lastActivity = Date.now();
@@ -1353,7 +1159,7 @@ server.listen(PORT, () => {
   socket.on('delete-message', (payload) => {
     try {
       const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      if (!admin || !admin.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -1371,7 +1177,7 @@ server.listen(PORT, () => {
   socket.on('add-moderator', (payload) => {
     try {
       const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      if (!admin || !admin.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -1382,7 +1188,7 @@ server.listen(PORT, () => {
       
       admin.lastActivity = Date.now();
       saveData();
-      socket.emit('action-success', `${payload.username} is now moderator`);
+      socket.emit('action-success', payload.username + ' is now moderator');
     } catch (e) {
       console.error('Add moderator error:', e);
     }
@@ -1391,7 +1197,7 @@ server.listen(PORT, () => {
   socket.on('remove-moderator', (payload) => {
     try {
       const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
+      if (!admin || !admin.isOwner) return socket.emit('error', 'Owner only');
       
       const room = rooms.get(payload.roomId);
       if (!room) return socket.emit('error', 'Room not found');
@@ -1400,20 +1206,16 @@ server.listen(PORT, () => {
       admin.lastActivity = Date.now();
       
       saveData();
-      socket.emit('action-success', `${payload.username} removed from moderators`);
+      socket.emit('action-success', payload.username + ' removed');
     } catch (e) {
       console.error('Remove moderator error:', e);
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════
-  // SYSTEM SETTINGS
-  // ═══════════════════════════════════════════════════════════════
-
   socket.on('update-settings', (payload) => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       if (payload.siteLogo !== undefined) systemSettings.siteLogo = payload.siteLogo;
       if (payload.siteTitle !== undefined) systemSettings.siteTitle = payload.siteTitle;
@@ -1434,28 +1236,6 @@ server.listen(PORT, () => {
       console.error('Update settings error:', e);
     }
   });
-
-  socket.on('toggle-user-image-permission', (payload) => {
-    try {
-      const admin = users.get(socket.userId);
-      if (!admin?.isOwner) return socket.emit('error', 'Owner only');
-      
-      const target = users.get(payload.userId);
-      if (!target) return socket.emit('error', 'User not found');
-      
-      target.canSendImages = payload.allowed;
-      admin.lastActivity = Date.now();
-      
-      saveData();
-      socket.emit('action-success', `Image permission ${payload.allowed ? 'granted' : 'revoked'}`);
-    } catch (e) {
-      console.error('Toggle image permission error:', e);
-    }
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // LISTS & SUPPORT
-  // ═══════════════════════════════════════════════════════════════
 
   socket.on('get-rooms', () => {
     try {
@@ -1513,7 +1293,7 @@ server.listen(PORT, () => {
       }
       
       let list = Array.from(mutedUsers.entries())
-        .map(([uid, info]) => ({ userId: uid, ...info }));
+        .map(([uid, info]) => ({ userId: uid, username: info.username, expires: info.expires, reason: info.reason, mutedBy: info.mutedBy, mutedById: info.mutedById, temporary: info.temporary, byOwner: info.byOwner }));
       
       if (user.isModerator && !user.isOwner) {
         list = list.filter(item => item.mutedById === socket.userId || !item.byOwner);
@@ -1528,10 +1308,10 @@ server.listen(PORT, () => {
   socket.on('get-banned-list', () => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
       const list = Array.from(bannedUsers.entries())
-        .map(([uid, info]) => ({ userId: uid, ...info }));
+        .map(([uid, info]) => ({ userId: uid, username: info.username, reason: info.reason, bannedBy: info.bannedBy, bannedAt: info.bannedAt }));
       socket.emit('banned-list', list);
     } catch (e) {
       console.error('Get banned list error:', e);
@@ -1542,9 +1322,9 @@ server.listen(PORT, () => {
     try {
       const id = 'support_' + uuidv4();
       supportMessages.set(id, {
-        id,
+        id: id,
         from: payload.from || 'Anonymous',
-        message: (payload.message || '').toString().substring(0, 1000),
+        message: String(payload.message || '').substring(0, 1000),
         sentAt: new Date().toISOString(),
         fromIP: socket.userIP || ''
       });
@@ -1553,7 +1333,7 @@ server.listen(PORT, () => {
       if (user) user.lastActivity = Date.now();
       
       saveData();
-      socket.emit('support-message-sent', { message: 'Message sent to owner' });
+      socket.emit('support-message-sent', { message: 'Message sent' });
     } catch (e) {
       console.error('Send support message error:', e);
     }
@@ -1562,6 +1342,102 @@ server.listen(PORT, () => {
   socket.on('get-support-messages', () => {
     try {
       const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
       
-      socket.emit
+      socket.emit('support-messages-list', Array.from(supportMessages.values()));
+    } catch (e) {
+      console.error('Get support messages error:', e);
+    }
+  });
+
+  socket.on('delete-support-message', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
+      
+      supportMessages.delete(payload.messageId);
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Message deleted');
+    } catch (e) {
+      console.error('Delete support message error:', e);
+    }
+  });
+
+  socket.on('unmute-multiple', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
+      
+      (payload.userIds || []).forEach(uid => mutedUsers.delete(uid));
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Users unmuted');
+    } catch (e) {
+      console.error('Unmute multiple error:', e);
+    }
+  });
+
+  socket.on('unban-multiple', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user || !user.isOwner) return socket.emit('error', 'Owner only');
+      
+      (payload.userIds || []).forEach(uid => bannedUsers.delete(uid));
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Users unbanned');
+    } catch (e) {
+      console.error('Unban multiple error:', e);
+    }
+  });
+
+  socket.on('ping', () => {
+    try {
+      if (socket.userId) {
+        onlineUsers.set(socket.userId, Date.now());
+        const user = users.get(socket.userId);
+        if (user) user.lastActivity = Date.now();
+      }
+    } catch (e) {
+      console.error('Ping error:', e);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    try {
+      if (socket.userId) {
+        onlineUsers.delete(socket.userId);
+        rooms.forEach(room => {
+          room.users = (room.users || []).filter(u => u !== socket.userId);
+        });
+      }
+      console.log('🔌 Disconnect:', socket.id);
+    } catch (e) {
+      console.error('Disconnect error:', e);
+    }
+  });
+});
+
+setInterval(() => {
+  try {
+    saveData();
+  } catch (e) {
+    console.error('Auto-save error:', e);
+  }
+}, 30000);
+
+setInterval(() => {
+  console.log('🔄 Server alive -', new Date().toISOString());
+}, 5 * 60 * 1000);
+
+server.listen(PORT, () => {
+  console.log('🚀 Cold Room V3.0 - Server running on port ' + PORT);
+  console.log('✅ Owner: COLDKING / ColdKing@2025');
+  console.log('✅ All features enabled!');
+});
+
+// END
