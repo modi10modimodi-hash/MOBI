@@ -116,6 +116,9 @@ function saveData() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// INITIALIZE OWNER & GLOBAL ROOM
+// ═══════════════════════════════════════════════════════════════
+
 function createOwnerIfMissing() {
   const ownerId = 'owner_cold_001';
   if (!users.has(ownerId)) {
@@ -305,11 +308,122 @@ io.on('connection', (socket) => {
 
       const userBlockedList = blockedUsers.get(foundId) || new Set();
 
-      // Send support messages list to user (optional context)
       socket.emit('support-messages-list', Array.from(supportMessages.values()));
+    } catch (e) {
+      console.error('Get support messages error:', e);
+    }
+  });
 
-      // ✅ Correctly placed login-success payload
-      socket.emit('login-success', {
+  socket.on('delete-support-message', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      supportMessages.delete(payload.messageId);
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Message deleted');
+    } catch (e) {
+      console.error('Delete support message error:', e);
+    }
+  });
+
+  socket.on('unmute-multiple', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      (payload.userIds || []).forEach(uid => mutedUsers.delete(uid));
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Users unmuted');
+    } catch (e) {
+      console.error('Unmute multiple error:', e);
+    }
+  });
+
+  socket.on('unban-multiple', (payload) => {
+    try {
+      const user = users.get(socket.userId);
+      if (!user?.isOwner) return socket.emit('error', 'Owner only');
+      
+      (payload.userIds || []).forEach(uid => bannedUsers.delete(uid));
+      user.lastActivity = Date.now();
+      
+      saveData();
+      socket.emit('action-success', 'Users unbanned');
+    } catch (e) {
+      console.error('Unban multiple error:', e);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // HEARTBEAT & DISCONNECT
+  // ═══════════════════════════════════════════════════════════════
+
+  socket.on('ping', () => {
+    try {
+      if (socket.userId) {
+        onlineUsers.set(socket.userId, Date.now());
+        const user = users.get(socket.userId);
+        if (user) user.lastActivity = Date.now();
+      }
+    } catch (e) {
+      console.error('Ping error:', e);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    try {
+      if (socket.userId) {
+        onlineUsers.delete(socket.userId);
+        rooms.forEach(room => {
+          room.users = (room.users || []).filter(u => u !== socket.userId);
+        });
+      }
+      console.log('🔌 Disconnect:', socket.id);
+    } catch (e) {
+      console.error('Disconnect error:', e);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO-SAVE & CLEANUP
+// ═══════════════════════════════════════════════════════════════
+
+// Auto-save every 30 seconds
+setInterval(() => {
+  try {
+    saveData();
+  } catch (e) {
+    console.error('Auto-save error:', e);
+  }
+}, 30000);
+
+// Keep server alive (for hosting platforms)
+setInterval(() => {
+  console.log('🔄 Server alive -', new Date().toISOString());
+}, 5 * 60 * 1000); // Every 5 minutes
+
+// ═══════════════════════════════════════════════════════════════
+// START SERVER
+// ═══════════════════════════════════════════════════════════════
+
+server.listen(PORT, () => {
+  console.log(`🚀 Cold Room V3.0 - Server running on port ${PORT}`);
+  console.log(`✅ Owner: COLDKING / ColdKing@2025`);
+  console.log(`✅ All features enabled!`);
+  console.log(`✅ Data persistence: ACTIVE`);
+  console.log(`✅ Auto-cleanup: ACTIVE (10 days inactivity)`);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// END - Cold Room V3.0 Complete Server
+// © 2025 Cold Room - All Rights Reserved
+// ═══════════════════════════════════════════════════════════════('login-success', {
         user: {
           id: foundId,
           username: user.username,
@@ -388,85 +502,6 @@ io.on('connection', (socket) => {
     } catch (e) {
       console.error('Register error:', e);
       socket.emit('register-error', 'Server error');
-    }
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // SUPPORT MESSAGES MANAGEMENT FOR OWNER
-  // ═══════════════════════════════════════════════════════════════
-
-  socket.on('delete-support-message', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
-      
-      supportMessages.delete(payload.messageId);
-      user.lastActivity = Date.now();
-      
-      saveData();
-      socket.emit('action-success', 'Message deleted');
-    } catch (e) {
-      console.error('Delete support message error:', e);
-    }
-  });
-
-  socket.on('unmute-multiple', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
-      
-      (payload.userIds || []).forEach(uid => mutedUsers.delete(uid));
-      user.lastActivity = Date.now();
-      
-      saveData();
-      socket.emit('action-success', 'Users unmuted');
-    } catch (e) {
-      console.error('Unmute multiple error:', e);
-    }
-  });
-
-  socket.on('unban-multiple', (payload) => {
-    try {
-      const user = users.get(socket.userId);
-      if (!user?.isOwner) return socket.emit('error', 'Owner only');
-      
-      (payload.userIds || []).forEach(uid => bannedUsers.delete(uid));
-      user.lastActivity = Date.now();
-      
-      saveData();
-      socket.emit('action-success', 'Users unbanned');
-    } catch (e) {
-      console.error('Unban multiple error:', e);
-    }
-  });
-
-  // ═══════════════════════════════════════════════════════════════
-  // HEARTBEAT & DISCONNECT
-  // ═══════════════════════════════════════════════════════════════
-
-  socket.on('ping', () => {
-    try {
-      if (socket.userId) {
-        onlineUsers.set(socket.userId, Date.now());
-        const user = users.get(socket.userId);
-        if (user) user.lastActivity = Date.now();
-      }
-    } catch (e) {
-      console.error('Ping error:', e);
-    }
-  });
-
-  socket.on('disconnect', () => {
-    try {
-      if (socket.userId) {
-        onlineUsers.delete(socket.userId);
-        rooms.forEach(room => {
-          room.users = (room.users || []).filter(u => u !== socket.userId);
-        });
-      }
-      console.log('🔌 Disconnect:', socket.id);
-    } catch (e) {
-      console.error('Disconnect error:', e);
     }
   });
 
@@ -1480,7 +1515,6 @@ io.on('connection', (socket) => {
       let list = Array.from(mutedUsers.entries())
         .map(([uid, info]) => ({ userId: uid, ...info }));
       
-      // If moderator, show only those muted by him or non-owner mutes
       if (user.isModerator && !user.isOwner) {
         list = list.filter(item => item.mutedById === socket.userId || !item.byOwner);
       }
@@ -1530,44 +1564,4 @@ io.on('connection', (socket) => {
       const user = users.get(socket.userId);
       if (!user?.isOwner) return socket.emit('error', 'Owner only');
       
-      socket.emit('support-messages-list', Array.from(supportMessages.values()));
-    } catch (e) {
-      console.error('Get support messages error:', e);
-    }
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
-// AUTO-SAVE & CLEANUP
-// ═══════════════════════════════════════════════════════════════
-
-// Auto-save every 30 seconds
-setInterval(() => {
-  try {
-    saveData();
-  } catch (e) {
-    console.error('Auto-save error:', e);
-  }
-}, 30000);
-
-// Keep server alive (for hosting platforms)
-setInterval(() => {
-  console.log('🔄 Server alive -', new Date().toISOString());
-}, 5 * 60 * 1000); // Every 5 minutes
-
-// ═══════════════════════════════════════════════════════════════
-// START SERVER
-// ═══════════════════════════════════════════════════════════════
-
-server.listen(PORT, () => {
-  console.log(`🚀 Cold Room V3.0 - Server running on port ${PORT}`);
-  console.log(`✅ Owner: COLDKING / ColdKing@2025`);
-  console.log(`✅ All features enabled!`);
-  console.log(`✅ Data persistence: ACTIVE`);
-  console.log(`✅ Auto-cleanup: ACTIVE (10 days inactivity)`);
-});
-
-// ═══════════════════════════════════════════════════════════════
-// END - Cold Room V3.0 Complete Server
-// © 2025 Cold Room - All Rights Reserved
-// ═══════════════════════════════════════════════════════════════
+      socket.emit
