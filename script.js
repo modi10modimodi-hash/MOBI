@@ -1,151 +1,8 @@
-// ═══════════════════════════════════════════════════════════════
-// USER ACTIONS
-// ═══════════════════════════════════════════════════════════════
-
-window.showMuteDialog = function() {
-    const duration = prompt(`Mute ${selectedUsername} for minutes? (0 = permanent):`, '10');
-    if (duration === null) return;
-    const reason = prompt('Reason:', 'Rule violation');
-    if (!reason) return;
-    socket.emit('mute-user', {
-        userId: selectedUserId,
-        username: selectedUsername,
-        duration: parseInt(duration),
-        reason,
-        roomId: currentRoom
-    });
-};
-
-window.banUser = function() {
-    if (!confirm(`Ban ${selectedUsername}?`)) return;
-    const reason = prompt('Reason:', 'Serious violation');
-    if (reason) socket.emit('ban-user', { userId: selectedUserId, username: selectedUsername, reason });
-};
-
-window.deleteAccount = function() {
-    if (!confirm(`⚠️ DELETE ${selectedUsername}? This CANNOT be undone!`)) return;
-    socket.emit('delete-account', { userId: selectedUserId });
-};
-
-window.addModerator = function() {
-    if (!confirm(`Add ${selectedUsername} as moderator?`)) return;
-    socket.emit('add-moderator', { userId: selectedUserId, username: selectedUsername, roomId: currentRoom });
-};
-
-window.removeModerator = function() {
-    if (!confirm(`Remove ${selectedUsername} from moderators?`)) return;
-    socket.emit('remove-moderator', { userId: selectedUserId, username: selectedUsername, roomId: currentRoom });
-};
-
-function showActionsMenu(actions) {
-    const menu = document.getElementById('message-actions-menu');
-    const list = document.getElementById('message-actions-list');
-    list.innerHTML = '';
-    
-    actions.forEach(action => {
-        const btn = document.createElement('button');
-        btn.className = 'action-menu-btn';
-        btn.textContent = action.text;
-        btn.onclick = (e) => { 
-            e.stopPropagation();
-            hideActionsMenu(); 
-            action.action(); 
-        };
-        list.appendChild(btn);
-    });
-
-    menu.style.display = 'flex';
-}
-
-function hideActionsMenu() {
-    document.getElementById('message-actions-menu').style.display = 'none';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MEDIA UPLOAD
-// ═══════════════════════════════════════════════════════════════
-
-window.showImageUpload = () => document.getElementById('image-upload-modal').classList.add('active');
-window.sendImageMessage = function() {
-    const url = document.getElementById('image-url-input').value.trim();
-    if (!url) return showAlert('Enter image URL', 'error');
-    socket.emit('send-image', { imageUrl: url });
-    document.getElementById('image-url-input').value = '';
-    hideModal('image-upload-modal');
-};
-
-window.showVideoUpload = () => document.getElementById('video-upload-modal').classList.add('active');
-window.sendVideoMessage = function() {
-    const url = document.getElementById('video-url-input').value.trim();
-    if (!url) return showAlert('Enter video URL', 'error');
-    if (!url.toLowerCase().endsWith('.mp4')) return showAlert('MP4 only', 'error');
-    socket.emit('send-video', { videoUrl: url });
-    document.getElementById('video-url-input').value = '';
-    hideModal('video-upload-modal');
-};
-
-// ═══════════════════════════════════════════════════════════════
-// PRIVATE MESSAGES
-// ═══════════════════════════════════════════════════════════════
-
-window.showPrivateMessages = function() {
-    document.getElementById('private-messages-modal').classList.add('active');
-    loadPrivateUsersList();
-};
-
-function loadPrivateUsersList() {
-    const container = document.getElementById('private-users-list');
-    container.innerHTML = '';
-    socket.emit('get-users', { roomId: currentRoom });
-    socket.once('users-list', (users) => {
-        users.forEach(user => {
-            if (user.id === currentUser?.id) return;
-            const div = document.createElement('div');
-            div.className = `private-user-item ${blockedUsers.has(user.id) ? 'blocked' : ''}`;
-            div.dataset.userId = user.id;
-            div.dataset.userName = user.displayName;
-            
-            let avatarHTML = '';
-            if (user.profilePicture) {
-                avatarHTML = `<div class="user-avatar"><img src="${esc(user.profilePicture)}"></div>`;
-            } else {
-                avatarHTML = `<div class="user-avatar"><span>${esc(user.avatar)}</span></div>`;
-            }
-            
-            div.innerHTML = `${avatarHTML}<span>${esc(user.displayName)}</span>`;
-            div.onclick = () => openPrivateChat(user.id);
-            container.appendChild(div);
-        });
-    });
-}
-
-function openPrivateChat(userId) {
-    // Owner cannot be blocked
-    const targetUser = Array.from(document.querySelectorAll('.user-item'))
-        .find(el => el.dataset.userId === userId);
-    
-    if (blockedUsers.has(userId)) {
-        showAlert('You have blocked this user', 'error');
-        return;
-    }
-    
-    currentPrivateChatUser = userId;
-    socket.emit('get-private-messages', { withUserId: userId });
-    document.getElementById('private-messages-modal').classList.add('active');
-    
-    const user = Array.from(document.querySelectorAll('.user-item'))
-        .find(el => el.dataset.userId === userId);
-    if (user) {
-        document.getElementById('private-chat-name').textContent = user.dataset.userName;
-        document.getElementById('block-user-btn').style.display = 'inline-block';
-    }
-}
-
 window.sendPrivateMessage = function() {
     const input = document.getElementById('private-message-input');
     const text = input.value.trim();
     if (!text || !currentPrivateChatUser) return;
-    socket.emit('send-private-message', { toUserId: currentPrivateChatUser, text });
+    socket.emit('send-private-message', { toUserId: currentPrivateChatUser, text: text });
     input.value = '';
 };
 
@@ -174,28 +31,17 @@ function displayPrivateMessages(messages, withUserId) {
     messages.forEach(msg => {
         const isFromMe = msg.from === currentUser?.id;
         const div = document.createElement('div');
-        div.className = `message ${isFromMe ? 'my-message' : ''}`;
+        div.className = 'message ' + (isFromMe ? 'my-message' : '');
         
-        // Add read receipt
         let readIcon = '';
         if (isFromMe && msg.read) {
             readIcon = '<span class="read-receipt" title="Seen">👁️</span>';
         }
         
-        div.innerHTML = `
-            <div class="message-header">
-                <span class="message-user">${esc(msg.fromName)}</span>
-            </div>
-            <div class="message-text">${esc(msg.text)}${msg.edited ? ' <small>(edited)</small>' : ''}</div>
-            <div class="message-footer">
-                <span class="message-time">${msg.timestamp}</span>
-                ${readIcon}
-            </div>
-        `;
+        div.innerHTML = '<div class="message-header"><span class="message-user">' + esc(msg.fromName) + '</span></div><div class="message-text">' + esc(msg.text) + (msg.edited ? ' <small>(edited)</small>' : '') + '</div><div class="message-footer"><span class="message-time">' + msg.timestamp + '</span>' + readIcon + '</div>';
         container.appendChild(div);
     });
     
-    // Scroll to bottom
     container.scrollTop = container.scrollHeight;
 }
 
@@ -205,24 +51,12 @@ function addPrivateMessage(message) {
     
     const isFromMe = message.from === currentUser?.id;
     const div = document.createElement('div');
-    div.className = `message ${isFromMe ? 'my-message' : ''}`;
+    div.className = 'message ' + (isFromMe ? 'my-message' : '');
     
-    div.innerHTML = `
-        <div class="message-header">
-            <span class="message-user">${esc(message.fromName)}</span>
-        </div>
-        <div class="message-text">${esc(message.text)}</div>
-        <div class="message-footer">
-            <span class="message-time">${message.timestamp}</span>
-        </div>
-    `;
+    div.innerHTML = '<div class="message-header"><span class="message-user">' + esc(message.fromName) + '</span></div><div class="message-text">' + esc(message.text) + '</div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div>';
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
-
-// ═══════════════════════════════════════════════════════════════
-// ROOM MANAGEMENT
-// ═══════════════════════════════════════════════════════════════
 
 window.showCreateRoomModal = () => document.getElementById('create-room-modal').classList.add('active');
 
@@ -231,7 +65,7 @@ window.createRoom = function() {
     const description = document.getElementById('room-desc-input').value.trim();
     const password = document.getElementById('room-pass-input').value.trim();
     if (!name) return showAlert('Enter room name', 'error');
-    socket.emit('create-room', { name, description, password });
+    socket.emit('create-room', { name: name, description: description, password: password });
     document.getElementById('room-name-input').value = '';
     document.getElementById('room-desc-input').value = '';
     document.getElementById('room-pass-input').value = '';
@@ -242,9 +76,9 @@ window.joinRoom = function(roomId) {
         .find(el => el.dataset.roomId === roomId);
     if (room && room.dataset.hasPassword === 'true') {
         const password = prompt('Room password:');
-        if (password) socket.emit('join-room', { roomId, password });
+        if (password) socket.emit('join-room', { roomId: roomId, password: password });
     } else {
-        socket.emit('join-room', { roomId });
+        socket.emit('join-room', { roomId: roomId });
     }
 };
 
@@ -277,19 +111,10 @@ function updateRoomsList(rooms) {
         const lock = room.hasPassword ? '🔒 ' : '';
         const official = room.isOfficial ? '⭐ ' : '';
         
-        div.innerHTML = `
-            <div class="room-item-name">${official}${lock}${esc(room.name)}</div>
-            <div class="room-item-desc">${esc(room.description)}</div>
-            <div class="room-item-info">
-                <span>👥 ${room.userCount}</span>
-                <span>${esc(room.createdBy)}</span>
-            </div>
-        `;
+        div.innerHTML = '<div class="room-item-name">' + official + lock + esc(room.name) + '</div><div class="room-item-desc">' + esc(room.description) + '</div><div class="room-item-info"><span>👥 ' + room.userCount + '</span><span>' + esc(room.createdBy) + '</span></div>';
         
-        // Click to join
         div.onclick = () => joinRoom(room.id);
         
-        // Long press for owner/creator actions
         if (currentUser && (currentUser.isOwner || room.creatorId === currentUser.id)) {
             div.addEventListener('mousedown', () => {
                 longPressTimer = setTimeout(() => {
@@ -317,13 +142,11 @@ function updateRoomsList(rooms) {
 function showRoomActions(room) {
     const actions = [];
     
-    // Edit room (owner or creator)
     actions.push({ 
         text: '✏️ Edit Room', 
         action: () => showEditRoomModal(room.id, room.name, room.description) 
     });
     
-    // Room controls (owner only)
     if (currentUser.isOwner) {
         actions.push({ 
             text: '🔇 Silence Room', 
@@ -336,19 +159,18 @@ function showRoomActions(room) {
         actions.push({ 
             text: '🧹 Clean Chat', 
             action: () => {
-                if (confirm(`Clean all messages in "${room.name}"?`)) {
+                if (confirm('Clean all messages in "' + room.name + '"?')) {
                     socket.emit('clean-chat', { roomId: room.id });
                 }
             }
         });
     }
     
-    // Delete room (owner or creator, but not official rooms)
     if (!room.isOfficial) {
         actions.push({ 
             text: '🗑️ Delete Room', 
             action: () => {
-                if (confirm(`Delete "${room.name}"? This cannot be undone!`)) {
+                if (confirm('Delete "' + room.name + '"? This cannot be undone!')) {
                     socket.emit('delete-room', { roomId: room.id });
                 }
             }
@@ -376,8 +198,8 @@ window.saveRoomEdit = function() {
     
     socket.emit('update-room', { 
         roomId: editingRoomId, 
-        name, 
-        description, 
+        name: name, 
+        description: description, 
         password: password || null 
     });
     
@@ -408,20 +230,12 @@ function updateUsersList(users) {
         
         let avatarHTML = '';
         if (user.profilePicture) {
-            avatarHTML = `<img src="${esc(user.profilePicture)}" alt="avatar">`;
+            avatarHTML = '<img src="' + esc(user.profilePicture) + '" alt="avatar">';
         } else {
-            avatarHTML = `<span>${esc(user.avatar)}</span>`;
+            avatarHTML = '<span>' + esc(user.avatar) + '</span>';
         }
         
-        div.innerHTML = `
-            <div class="user-avatar-wrapper">
-                <div class="user-avatar">${avatarHTML}</div>
-                ${user.isOnline ? '<span class="online-indicator"></span>' : ''}
-            </div>
-            <div class="user-info">
-                <div class="user-name">${esc(user.displayName)} ${badges}</div>
-            </div>
-        `;
+        div.innerHTML = '<div class="user-avatar-wrapper"><div class="user-avatar">' + avatarHTML + '</div>' + (user.isOnline ? '<span class="online-indicator"></span>' : '') + '</div><div class="user-info"><div class="user-name">' + esc(user.displayName) + ' ' + badges + '</div></div>';
         
         div.onclick = () => {
             selectedUserId = user.id;
@@ -433,22 +247,12 @@ function updateUsersList(users) {
     });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ROOM MEDIA
-// ═══════════════════════════════════════════════════════════════
-
 window.showRoomMediaSettings = function() {
     if (!currentUser?.isOwner) return showAlert('Owner only', 'error');
     document.getElementById('room-media-modal').classList.add('active');
     document.getElementById('current-room-name').textContent = document.getElementById('room-info').textContent;
     socket.emit('get-room-media', { roomId: currentRoom });
 };
-
-socket.on('room-media-data', (data) => {
-    document.getElementById('room-video-url').value = data.videoUrl || '';
-    document.getElementById('room-music-url').value = data.musicUrl || '';
-    document.getElementById('room-music-volume').value = data.musicVolume || 0.5;
-});
 
 window.updateRoomVideo = function() {
     const url = document.getElementById('room-video-url').value.trim();
@@ -492,18 +296,7 @@ function showRoomVideo(url) {
     const container = document.createElement('div');
     container.id = 'room-video-container';
     container.className = 'room-video-player';
-    container.innerHTML = `
-        <div class="video-header-bar">
-            <span>Room Video</span>
-            <button class="video-close-btn" onclick="hideRoomVideo()">✕</button>
-        </div>
-        <div class="video-content">
-            ${detectVideoType(url) === 'youtube' ? 
-                `<iframe src="https://www.youtube.com/embed/${extractYoutubeId(url)}" allowfullscreen></iframe>` :
-                `<video controls><source src="${url}" type="video/mp4"></video>`
-            }
-        </div>
-    `;
+    container.innerHTML = '<div class="video-header-bar"><span>Room Video</span><button class="video-close-btn" onclick="hideRoomVideo()">✕</button></div><div class="video-content">' + (detectVideoType(url) === 'youtube' ? '<iframe src="https://www.youtube.com/embed/' + extractYoutubeId(url) + '" allowfullscreen></iframe>' : '<video controls><source src="' + url + '" type="video/mp4"></video>') + '</div>';
     
     const existing = document.getElementById('room-video-container');
     if (existing) existing.remove();
@@ -540,13 +333,9 @@ function extractYoutubeId(url) {
     return match ? match[1] : url;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PARTY MODE
-// ═══════════════════════════════════════════════════════════════
-
 window.togglePartyMode = function() {
     const enabled = !document.body.classList.contains('party-mode');
-    socket.emit('toggle-party-mode', { roomId: currentRoom, enabled });
+    socket.emit('toggle-party-mode', { roomId: currentRoom, enabled: enabled });
 };
 
 function togglePartyEffects(enabled) {
@@ -556,10 +345,6 @@ function togglePartyEffects(enabled) {
         document.body.classList.remove('party-mode');
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// OWNER PANEL
-// ═══════════════════════════════════════════════════════════════
 
 window.showOwnerPanel = function() {
     document.getElementById('owner-panel-modal').classList.add('active');
@@ -576,7 +361,7 @@ window.showModeratorPanel = function() {
 window.switchOwnerTab = function(tabName) {
     document.querySelectorAll('.owner-tab-content').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.getElementById(`owner-${tabName}`).classList.add('active');
+    document.getElementById('owner-' + tabName).classList.add('active');
     event.target.classList.add('active');
 
     if (tabName === 'muted') socket.emit('get-muted-list');
@@ -646,7 +431,7 @@ window.cleanSelectedRoom = function() {
     const roomId = document.getElementById('clean-room-select').value;
     if (!roomId) return showAlert('Select a room', 'error');
     if (confirm('Clean messages in selected room?')) {
-        socket.emit('clean-chat', { roomId });
+        socket.emit('clean-chat', { roomId: roomId });
     }
 };
 
@@ -668,20 +453,7 @@ function displayMutedList(list) {
         const timeLeft = item.temporary && item.expires ? Math.ceil((item.expires - Date.now()) / 60000) + ' min' : 'Permanent';
         const div = document.createElement('div');
         div.className = 'owner-item';
-        div.innerHTML = `
-            <div class="owner-item-header">
-                <div>
-                    <input type="checkbox" class="muted-checkbox" data-user-id="${item.userId}">
-                    <strong>${esc(item.username)}</strong><br>
-                    <small>By: ${esc(item.mutedBy)}</small>
-                </div>
-                <button class="modern-btn small" onclick="unmute('${item.userId}')">Unmute</button>
-            </div>
-            <div style="margin-top:0.5rem;">
-                <small>Reason: ${esc(item.reason)}</small><br>
-                <small>Duration: ${timeLeft}</small>
-            </div>
-        `;
+        div.innerHTML = '<div class="owner-item-header"><div><input type="checkbox" class="muted-checkbox" data-user-id="' + item.userId + '"><strong>' + esc(item.username) + '</strong><br><small>By: ' + esc(item.mutedBy) + '</small></div><button class="modern-btn small" onclick="unmute(\'' + item.userId + '\')">Unmute</button></div><div style="margin-top:0.5rem;"><small>Reason: ' + esc(item.reason) + '</small><br><small>Duration: ' + timeLeft + '</small></div>';
         container.appendChild(div);
     });
 }
@@ -697,15 +469,7 @@ function displayBannedList(list) {
     list.forEach(item => {
         const div = document.createElement('div');
         div.className = 'owner-item';
-        div.innerHTML = `
-            <div class="owner-item-header">
-                <div>
-                    <input type="checkbox" class="banned-checkbox" data-user-id="${item.userId}">
-                    <strong>${esc(item.username)}</strong>
-                </div>
-                <button class="modern-btn small" onclick="unban('${item.userId}')">Unban</button>
-            </div>
-        `;
+        div.innerHTML = '<div class="owner-item-header"><div><input type="checkbox" class="banned-checkbox" data-user-id="' + item.userId + '"><strong>' + esc(item.username) + '</strong></div><button class="modern-btn small" onclick="unban(\'' + item.userId + '\')">Unban</button></div>';
         container.appendChild(div);
     });
 }
@@ -721,13 +485,7 @@ function displaySupportMessages(messages) {
     messages.forEach(msg => {
         const div = document.createElement('div');
         div.className = 'owner-item';
-        div.innerHTML = `
-            <div class="owner-item-header">
-                <div><strong>${esc(msg.from)}</strong></div>
-                <button class="modern-btn small" onclick="deleteSupportMessage('${msg.id}')">Delete</button>
-            </div>
-            <div style="margin-top:1rem;">${esc(msg.message)}</div>
-        `;
+        div.innerHTML = '<div class="owner-item-header"><div><strong>' + esc(msg.from) + '</strong></div><button class="modern-btn small" onclick="deleteSupportMessage(\'' + msg.id + '\')">Delete</button></div><div style="margin-top:1rem;">' + esc(msg.message) + '</div>';
         container.appendChild(div);
     });
 }
@@ -741,32 +499,185 @@ function displayModMutedList(list) {
         return;
     }
     list.forEach(item => {
-        const timeLeft = item.temporary && item.expires ? Math.ceil((item.expires - Date.now()) / 60000) + ' min' : 'Permanent';
         const div = document.createElement('div');
         div.className = 'owner-item';
-        div.innerHTML = `
-            <div class="owner-item-header">
-                <div>
-                    <input type="checkbox" class="mod-muted-checkbox" data-user-id="${item.userId}">
-                    <strong>${esc(item.username)}</strong>
-                </div>
-                <button class="modern-btn small" onclick="unmute('${item.userId}')">Unmute</button>
-            </div>
-        `;
+        div.innerHTML = '<div class="owner-item-header"><div><input type="checkbox" class="mod-muted-checkbox" data-user-id="' + item.userId + '"><strong>' + esc(item.username) + '</strong></div><button class="modern-btn small" onclick="unmute(\'' + item.userId + '\')">Unmute</button></div>';
         container.appendChild(div);
     });
 }
 
 window.unmute = function(userId) {
-    socket.emit('unmute-user', { userId });
-    setTimeout(() => socket.emit('get-muted-list'), 500);// ═══════════════════════════════════════════════════════════════
-// Cold Room V3.0 - COMPLETE ENHANCED CLIENT
+    socket.emit('unmute-user', { userId: userId });
+    setTimeout(() => socket.emit('get-muted-list'), 500);
+};
+
+window.unban = function(userId) {
+    socket.emit('unban-user', { userId: userId });
+    setTimeout(() => socket.emit('get-banned-list'), 500);
+};
+
+window.deleteSupportMessage = function(messageId) {
+    socket.emit('delete-support-message', { messageId: messageId });
+    setTimeout(() => socket.emit('get-support-messages'), 500);
+};
+
+window.selectAllMuted = () => document.querySelectorAll('.muted-checkbox').forEach(cb => cb.checked = true);
+window.selectAllBanned = () => document.querySelectorAll('.banned-checkbox').forEach(cb => cb.checked = true);
+window.selectAllModMuted = () => document.querySelectorAll('.mod-muted-checkbox').forEach(cb => cb.checked = true);
+
+window.unmuteSelected = function() {
+    const selected = Array.from(document.querySelectorAll('.muted-checkbox:checked')).map(cb => cb.dataset.userId);
+    if (selected.length === 0) return showAlert('Select users first', 'error');
+    if (confirm('Unmute ' + selected.length + ' users?')) {
+        socket.emit('unmute-multiple', { userIds: selected });
+        setTimeout(() => socket.emit('get-muted-list'), 500);
+    }
+};
+
+window.unbanSelected = function() {
+    const selected = Array.from(document.querySelectorAll('.banned-checkbox:checked')).map(cb => cb.dataset.userId);
+    if (selected.length === 0) return showAlert('Select users first', 'error');
+    if (confirm('Unban ' + selected.length + ' users?')) {
+        socket.emit('unban-multiple', { userIds: selected });
+        setTimeout(() => socket.emit('get-banned-list'), 500);
+    }
+};
+
+window.unmuteModSelected = function() {
+    const selected = Array.from(document.querySelectorAll('.mod-muted-checkbox:checked')).map(cb => cb.dataset.userId);
+    if (selected.length === 0) return showAlert('Select users first', 'error');
+    if (confirm('Unmute ' + selected.length + ' users?')) {
+        selected.forEach(userId => socket.emit('unmute-user', { userId: userId }));
+        setTimeout(() => {
+            socket.emit('get-muted-list');
+            socket.once('muted-list', displayModMutedList);
+        }, 500);
+    }
+};
+
+window.hideModal = (modalId) => document.getElementById(modalId).classList.remove('active');
+
+function clearMessages() {
+    const container = document.getElementById('messages');
+    if (container) {
+        container.innerHTML = '<div class="welcome-message glass-card"><img src="' + (systemSettings.siteLogo || 'https://j.top4top.io/p_3585vud691.jpg') + '" alt="Welcome" class="welcome-logo"><h3>Welcome to ' + (systemSettings.siteTitle || 'Cold Room') + '! ❄️</h3><p>Start chatting</p></div>';
+    }
+}
+
+function scrollToBottom() {
+    const container = document.getElementById('messages');
+    if (container) {
+        setTimeout(() => container.scrollTop = container.scrollHeight, 100);
+    }
+}
+
+function esc(text) {
+    if (text === undefined || text === null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+function showAlert(message, type) {
+    const colors = { error: '#dc2626', success: '#10b981', warning: '#f59e0b', info: '#4a90e2' };
+    const alertDiv = document.createElement('div');
+    alertDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: ' + colors[type] + '; color: white; padding: 1rem 1.5rem; border-radius: 12px; z-index: 10000; font-weight: 600; box-shadow: 0 8px 32px rgba(0,0,0,0.3); max-width: 400px;';
+    alertDiv.textContent = message;
+    document.body.appendChild(alertDiv);
+    setTimeout(() => alertDiv.remove(), 4000);
+}
+
+function showNotification(message) {
+    const div = document.createElement('div');
+    div.style.cssText = 'position: fixed; top: 80px; right: 20px; background: rgba(74, 144, 226, 0.9); color: white; padding: 1rem 1.5rem; border-radius: 12px; z-index: 9999;';
+    div.textContent = message;
+    document.body.appendChild(div);
+    setTimeout(() => div.remove(), 3000);
+}
+
+function showLoading(message) {
+    let div = document.getElementById('loading-overlay');
+    if (!div) {
+        div = document.createElement('div');
+        div.id = 'loading-overlay';
+        document.body.appendChild(div);
+    }
+    div.innerHTML = '<div><div class="spinner"></div><div style="margin-top: 1.5rem; font-size: 1.2rem; font-weight: 600;">' + message + '</div></div>';
+}
+
+function hideLoading() {
+    const div = document.getElementById('loading-overlay');
+    if (div) div.remove();
+}
+
+function applySiteSettings() {
+    document.querySelectorAll('#main-logo, #header-logo, .welcome-logo').forEach(el => {
+        if (el.tagName === 'IMG') el.src = systemSettings.siteLogo;
+    });
+    document.getElementById('site-favicon').href = systemSettings.siteLogo;
+    document.getElementById('site-title').textContent = systemSettings.siteTitle;
+    document.getElementById('main-title').textContent = systemSettings.siteTitle;
+    document.getElementById('header-title').textContent = systemSettings.siteTitle;
+
+    document.body.classList.remove('black-theme', 'red-theme');
+    if (systemSettings.backgroundColor === 'black') {
+        document.body.classList.add('black-theme');
+    } else if (systemSettings.backgroundColor === 'red') {
+        document.body.classList.add('red-theme');
+    }
+
+    updateSnowmanTheme();
+}
+
+function updateMusicPlayers() {
+    const loginMusic = document.getElementById('login-music');
+    const chatMusic = document.getElementById('chat-music');
+
+    if (systemSettings.loginMusic && loginMusic) {
+        loginMusic.src = systemSettings.loginMusic;
+        loginMusic.volume = systemSettings.loginMusicVolume || 0.5;
+    }
+
+    if (systemSettings.chatMusic && chatMusic) {
+        chatMusic.src = systemSettings.chatMusic;
+        chatMusic.volume = systemSettings.chatMusicVolume || 0.5;
+    }
+}
+
+function stopLoginMusic() {
+    const audio = document.getElementById('login-music');
+    if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+    }
+}
+
+function startHeartbeat() {
+    setInterval(() => {
+        if (socket && socket.connected) socket.emit('ping');
+    }, 30000);
+}
+
+function createSnowfall() {
+    const container = document.getElementById('snowflakes');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    const isRedTheme = document.body.classList.contains('red-theme');
+    const symbol = isRedTheme ? '🔥' : '❄';
+    
+    for (let i = 0; i < 50; i++) {
+        const snowflake = document.createElement('div');
+        snowflake.className = 'snowflake';
+        snowflake.textContent = symbol;
+        snowflake.style.cssText = 'left: ' + (Math.random() * 100) + '%; animation-duration: ' + (Math.random() * 3 + 2) + 's; animation-delay: ' + (Math.random() * 5) + 's; font-size: ' + (Math.random() * 10 + 10) + 'px;';
+        // ═══════════════════════════════════════════════════════════════
+// Cold Room V3.0 - COMPLETE CLIENT (Fixed)
 // © 2025 Cold Room - All Rights Reserved
 // ═══════════════════════════════════════════════════════════════
 
-console.log('❄️ Cold Room V3.0 Enhanced Loading...');
+console.log('❄️ Cold Room V3.0 Loading...');
 
-// Global variables
 let socket = null;
 let currentUser = null;
 let currentRoom = null;
@@ -778,13 +689,9 @@ let confirmCallback = null;
 let editingRoomId = null;
 let isReconnecting = false;
 let blockedUsers = new Set();
-let replyToMessage = null; // For message replies
-let longPressTimer = null; // For long press detection
+let replyToMessage = null;
+let longPressTimer = null;
 let selectedRoomForActions = null;
-
-// ═══════════════════════════════════════════════════════════════
-// INITIALIZATION
-// ═══════════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('✅ DOM Ready');
@@ -801,32 +708,24 @@ document.addEventListener('DOMContentLoaded', async function() {
     createSnowfall();
     drawSnowman();
     
-    console.log('✅ Cold Room V3.0 Initialized');
+    console.log('✅ Cold Room Initialized');
 });
 
 async function fetchInitialSettings() {
     try {
         const res = await fetch('/settings');
         if (res.ok) {
-            const s = await res.json();
-            systemSettings = s;
+            systemSettings = await res.json();
             applySiteSettings();
             updateMusicPlayers();
-            console.log('✅ Settings loaded');
         }
     } catch (e) {
-        console.log('⚠️ Settings fetch skipped:', e);
+        console.log('Settings fetch skipped');
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SOCKET INITIALIZATION
-// ═══════════════════════════════════════════════════════════════
-
 function initializeSocket() {
     try {
-        console.log('🔌 Initializing Socket...');
-        
         socket = io({
             transports: ['websocket', 'polling'],
             reconnection: true,
@@ -838,8 +737,8 @@ function initializeSocket() {
         setupSocketListeners();
         console.log('✅ Socket initialized');
     } catch (e) {
-        console.error('❌ Socket init failed:', e);
-        showAlert('Connection failed. Refresh the page.', 'error');
+        console.error('Socket init failed:', e);
+        showAlert('Connection failed', 'error');
     }
 }
 
@@ -857,32 +756,24 @@ function setupSocketListeners() {
     });
 
     socket.on('disconnect', () => {
-        console.log('⚠️ Disconnected');
         if (!isReconnecting) {
             showNotification('⚠️ Reconnecting...');
             isReconnecting = true;
         }
     });
 
-    socket.on('connect_error', (error) => {
-        console.error('❌ Connection error:', error);
-        hideLoading();
-    });
-
     socket.on('reconnect', () => {
-        console.log('✅ Reconnected');
         isReconnecting = false;
         if (currentUser && currentRoom) {
             socket.emit('join-room', { roomId: currentRoom });
         }
     });
 
-    // Auth events
     socket.on('login-success', handleLoginSuccess);
     socket.on('login-error', (msg) => { hideLoading(); showAlert(msg || 'Login failed', 'error'); });
     socket.on('banned-user', (data) => {
         hideLoading();
-        showAlert(`Banned: ${data.reason}`, 'error');
+        showAlert('Banned: ' + data.reason, 'error');
         document.getElementById('support-section').style.display = 'block';
     });
     socket.on('register-success', (data) => {
@@ -892,30 +783,29 @@ function setupSocketListeners() {
     });
     socket.on('register-error', (msg) => { hideLoading(); showAlert(msg || 'Registration failed', 'error'); });
 
-    // Message events
     socket.on('new-message', (msg) => {
         if (msg.roomId === currentRoom) { 
             addMessage(msg); 
             scrollToBottom(); 
         }
     });
+    
     socket.on('message-edited', (data) => {
-        const el = document.querySelector(`[data-message-id="${data.messageId}"] .message-text`);
+        const el = document.querySelector('[data-message-id="' + data.messageId + '"] .message-text');
         if (el) el.innerHTML = esc(data.newText) + ' <small>(edited)</small>';
     });
 
-    // Private messages
     socket.on('new-private-message', (msg) => {
         if (blockedUsers.has(msg.from)) return;
         if (currentPrivateChatUser === msg.from) {
             addPrivateMessage(msg);
         }
-        showNotification(`💬 ${msg.fromName}`);
+        showNotification('💬 ' + msg.fromName);
     });
+    
     socket.on('private-message-sent', addPrivateMessage);
     socket.on('private-messages-list', (d) => displayPrivateMessages(d.messages, d.withUserId));
 
-    // Room events
     socket.on('room-joined', handleRoomJoined);
     socket.on('room-created', (d) => {
         showAlert('Room created!', 'success');
@@ -927,34 +817,35 @@ function setupSocketListeners() {
         showNotification('Room updated');
     });
 
-    // User lists
     socket.on('users-list', updateUsersList);
     socket.on('rooms-list', updateRoomsList);
-    socket.on('user-joined', (d) => showNotification(`${d.username} joined`));
+    socket.on('user-joined', (d) => showNotification(d.username + ' joined'));
 
-    // Moderation
     socket.on('message-deleted', (d) => {
-        const el = document.querySelector(`[data-message-id="${d.messageId}"]`);
+        const el = document.querySelector('[data-message-id="' + d.messageId + '"]');
         if (el) el.remove();
     });
+    
     socket.on('chat-cleaned', (d) => { clearMessages(); showAlert(d.message, 'info'); });
+    
     socket.on('room-silenced', (d) => {
-        const disabled = d.forceDisable ?? true;
+        const disabled = d.forceDisable !== undefined ? d.forceDisable : true;
         document.getElementById('message-input').disabled = disabled && !currentUser?.isOwner;
         document.querySelector('#message-form button').disabled = disabled && !currentUser?.isOwner;
         showAlert(d.message, 'warning');
     });
+    
     socket.on('room-unsilenced', (d) => {
         document.getElementById('message-input').disabled = false;
         document.querySelector('#message-form button').disabled = false;
         showAlert(d.message, 'success');
     });
+    
     socket.on('room-deleted', (d) => {
         showAlert(d.message, 'error');
         socket.emit('join-room', { roomId: 'global_cold' });
     });
 
-    // Party mode
     socket.on('party-mode-changed', (d) => {
         if (d.roomId === currentRoom) {
             togglePartyEffects(d.enabled);
@@ -962,14 +853,12 @@ function setupSocketListeners() {
         }
     });
 
-    // Room media
     socket.on('room-media-updated', (d) => {
         if (d.roomId === currentRoom) {
             handleRoomMediaUpdate(d);
         }
     });
 
-    // Profile
     socket.on('profile-updated', (d) => {
         if (d.userId === currentUser?.id) {
             currentUser.profilePicture = d.profilePicture;
@@ -978,44 +867,26 @@ function setupSocketListeners() {
         showAlert(d.message, 'success');
     });
 
-    // General
     socket.on('action-success', (msg) => showAlert(msg, 'success'));
-    socket.on('error', (msg) => showAlert(msg || 'Error occurred', 'error'));
+    socket.on('error', (msg) => showAlert(msg || 'Error', 'error'));
+    
     socket.on('banned', (d) => {
-        showAlert(`Banned: ${d.reason}`, 'error');
+        showAlert('Banned: ' + d.reason, 'error');
         setTimeout(() => logout(true), 3000);
     });
+    
     socket.on('account-deleted', (d) => {
         showAlert(d.message, 'error');
         setTimeout(() => logout(true), 2000);
     });
 
-    // Settings
     socket.on('settings-updated', (s) => {
         systemSettings = s;
         applySiteSettings();
-        
-        if (document.getElementById('chat-screen').classList.contains('active')) {
-            const chatMusic = document.getElementById('chat-music');
-            if (chatMusic && s.chatMusic) {
-                chatMusic.src = s.chatMusic;
-                chatMusic.volume = s.chatMusicVolume || 0.5;
-                chatMusic.loop = true;
-                chatMusic.play().catch(() => {});
-            }
-        } else {
-            const loginMusic = document.getElementById('login-music');
-            if (loginMusic && s.loginMusic) {
-                loginMusic.src = s.loginMusic;
-                loginMusic.volume = s.loginMusicVolume || 0.5;
-                loginMusic.play().catch(() => {});
-            }
-        }
-        
+        updateMusicPlayers();
         showAlert('Settings updated', 'info');
     });
 
-    // Support & lists
     socket.on('support-message-sent', (d) => showAlert(d.message, 'success'));
     socket.on('support-messages-list', displaySupportMessages);
     socket.on('muted-list', displayMutedList);
@@ -1023,13 +894,12 @@ function setupSocketListeners() {
     socket.on('blocked-users', (list) => {
         blockedUsers = new Set(list);
     });
-    
-    console.log('✅ Socket listeners registered');
+    socket.on('room-media-data', (data) => {
+        document.getElementById('room-video-url').value = data.videoUrl || '';
+        document.getElementById('room-music-url').value = data.musicUrl || '';
+        document.getElementById('room-music-volume').value = data.musicVolume || 0.5;
+    });
 }
-
-// ═══════════════════════════════════════════════════════════════
-// EVENT LISTENERS
-// ═══════════════════════════════════════════════════════════════
 
 function setupEventListeners() {
     const messageForm = document.getElementById('message-form');
@@ -1050,7 +920,6 @@ function setupEventListeners() {
         });
     }
 
-    // Private message input - Enter to send
     const privateInput = document.getElementById('private-message-input');
     if (privateInput) {
         privateInput.addEventListener('keydown', function(e) {
@@ -1076,10 +945,6 @@ function setupEventListeners() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// LOGIN & REGISTER
-// ═══════════════════════════════════════════════════════════════
-
 window.login = function() {
     if (!socket || !socket.connected) {
         showAlert('Connecting...', 'warning');
@@ -1095,7 +960,7 @@ window.login = function() {
     }
     
     showLoading('Logging in...');
-    socket.emit('login', { username, password });
+    socket.emit('login', { username: username, password: password });
 };
 
 window.register = function() {
@@ -1127,7 +992,7 @@ window.register = function() {
     }
 
     showLoading('Creating account...');
-    socket.emit('register', { username, password, displayName, gender });
+    socket.emit('register', { username: username, password: password, displayName: displayName, gender: gender });
 };
 
 window.sendSupportMessage = function() {
@@ -1140,12 +1005,12 @@ window.sendSupportMessage = function() {
     
     socket.emit('send-support-message', {
         from: document.getElementById('login-username').value || 'Anonymous',
-        message
+        message: message
     });
     document.getElementById('support-message').value = '';
 };
 
-window.logout = function(forced = false) {
+window.logout = function(forced) {
     if (forced || confirm('Logout?')) {
         showLoading('Logging out...');
         if (socket) socket.disconnect();
@@ -1171,7 +1036,7 @@ function handleLoginSuccess(data) {
         stopLoginMusic();
         handleRoomMusic(data.room);
         hideLoading();
-        showAlert(`Welcome ${currentUser.displayName}! ❄️`, 'success');
+        showAlert('Welcome ' + currentUser.displayName + '! ❄️', 'success');
 
         clearMessages();
         data.room.messages.forEach(addMessage);
@@ -1194,13 +1059,11 @@ function handleLoginSuccess(data) {
         applySiteSettings();
         startHeartbeat();
 
-        // Handle room video if present
         if (data.room.videoUrl) {
             showRoomVideo(data.room.videoUrl);
         }
     } catch (e) {
         console.error('Login success error:', e);
-        showAlert('Login completed but some features may not work', 'warning');
     }
 }
 
@@ -1220,17 +1083,12 @@ function handleRoomJoined(data) {
 
     handleRoomMusic(data.room);
 
-    // Handle room video
     if (data.room.videoUrl) {
         showRoomVideo(data.room.videoUrl);
     } else {
         hideRoomVideo();
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// PROFILE MANAGEMENT
-// ═══════════════════════════════════════════════════════════════
 
 window.showProfileSettings = function() {
     document.getElementById('profile-settings-modal').classList.add('active');
@@ -1255,11 +1113,6 @@ window.showProfileSettings = function() {
 window.updateProfilePicture = function() {
     const url = document.getElementById('profile-picture-url').value.trim();
     if (!url) return showAlert('Enter image URL', 'error');
-    
-    const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-    const isValid = validExtensions.some(ext => url.toLowerCase().includes(ext));
-    
-    if (!isValid) return showAlert('Only JPG, PNG, GIF, WEBP allowed', 'error');
     
     socket.emit('update-profile-picture', { profilePicture: url });
     hideModal('profile-settings-modal');
@@ -1300,10 +1153,6 @@ function updateUserBadges() {
     container.innerHTML = badges;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MESSAGING
-// ═══════════════════════════════════════════════════════════════
-
 function sendMessage() {
     const textarea = document.getElementById('message-input');
     const text = textarea.value.trim();
@@ -1311,11 +1160,10 @@ function sendMessage() {
     if (!socket || !socket.connected) return showAlert('Reconnecting...', 'warning');
     
     const payload = {
-        text,
+        text: text,
         roomId: currentRoom
     };
     
-    // Add reply if present
     if (replyToMessage) {
         payload.replyTo = replyToMessage;
         cancelReply();
@@ -1334,95 +1182,37 @@ function addMessage(message) {
 
     const messageDiv = document.createElement('div');
     const isMyMessage = message.userId === currentUser?.id;
-    messageDiv.className = `message ${message.isOwner ? 'owner-message' : ''} ${isMyMessage ? 'my-message' : ''}`;
+    messageDiv.className = 'message ' + (message.isOwner ? 'owner-message ' : '') + (isMyMessage ? 'my-message' : '');
     messageDiv.setAttribute('data-message-id', message.id);
 
     let badges = '';
     if (message.isOwner) badges += '<span class="badge owner-badge">👑</span>';
     else if (message.isModerator) badges += '<span class="badge moderator-badge">⭐</span>';
 
-    // Profile picture or emoji
     let avatarHTML = '';
     if (message.profilePicture) {
-        avatarHTML = `<img src="${esc(message.profilePicture)}" alt="avatar" class="message-profile-pic">`;
+        avatarHTML = '<img src="' + esc(message.profilePicture) + '" alt="avatar" class="message-profile-pic">';
     } else {
-        avatarHTML = `<span class="message-avatar-emoji">${esc(message.avatar)}</span>`;
+        avatarHTML = '<span class="message-avatar-emoji">' + esc(message.avatar) + '</span>';
     }
 
-    // Build message HTML
     let messageHTML = '';
     
     if (message.isVideo) {
-        messageHTML = `
-            <div class="message-container">
-                <div class="message-avatar">${avatarHTML}</div>
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="message-user">${esc(message.username)}${badges}</span>
-                    </div>
-                    <div class="message-video">
-                        <video controls style="max-width: 100%; border-radius: 10px;">
-                            <source src="${esc(message.videoUrl)}" type="video/mp4">
-                        </video>
-                    </div>
-                    <div class="message-footer">
-                        <span class="message-time">${message.timestamp}</span>
-                    </div>
-                </div>
-            </div>
-        `;
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div><div class="message-video"><video controls style="max-width: 100%; border-radius: 10px;"><source src="' + esc(message.videoUrl) + '" type="video/mp4"></video></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     } else if (message.isImage) {
-        messageHTML = `
-            <div class="message-container">
-                <div class="message-avatar">${avatarHTML}</div>
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="message-user">${esc(message.username)}${badges}</span>
-                    </div>
-                    <div class="message-image">
-                        <img src="${esc(message.imageUrl)}" alt="Image" style="max-width: 100%; border-radius: 10px;">
-                    </div>
-                    <div class="message-footer">
-                        <span class="message-time">${message.timestamp}</span>
-                    </div>
-                </div>
-            </div>
-        `;
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div><div class="message-image"><img src="' + esc(message.imageUrl) + '" alt="Image" style="max-width: 100%; border-radius: 10px;"></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     } else {
-        // Regular text message with optional reply
         let replyHTML = '';
         if (message.replyTo) {
-            replyHTML = `
-                <div class="message-reply-preview">
-                    <div class="reply-indicator"></div>
-                    <div class="reply-content">
-                        <div class="reply-user">↩️ ${esc(message.replyTo.username)}</div>
-                        <div class="reply-text">${esc(message.replyTo.text).substring(0, 50)}${message.replyTo.text.length > 50 ? '...' : ''}</div>
-                    </div>
-                </div>
-            `;
+            replyHTML = '<div class="message-reply-preview"><div class="reply-indicator"></div><div class="reply-content"><div class="reply-user">↩️ ' + esc(message.replyTo.username) + '</div><div class="reply-text">' + esc(message.replyTo.text).substring(0, 50) + (message.replyTo.text.length > 50 ? '...' : '') + '</div></div></div>';
         }
         
-        messageHTML = `
-            <div class="message-container">
-                <div class="message-avatar">${avatarHTML}</div>
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="message-user">${esc(message.username)}${badges}</span>
-                    </div>
-                    ${replyHTML}
-                    <div class="message-text">${esc(message.text)}${message.edited ? ' <small>(edited)</small>' : ''}</div>
-                    <div class="message-footer">
-                        <span class="message-time">${message.timestamp}</span>
-                    </div>
-                </div>
-            </div>
-        `;
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-text">' + esc(message.text) + (message.edited ? ' <small>(edited)</small>' : '') + '</div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     }
 
     messageDiv.innerHTML = messageHTML;
 
-    // Add click handler for actions
     messageDiv.style.cursor = 'pointer';
     messageDiv.addEventListener('click', (e) => {
         if (!e.target.closest('.badge') && !e.target.closest('video') && !e.target.closest('img')) {
@@ -1439,7 +1229,6 @@ function addMessage(message) {
 function showMessageActions(message) {
     const actions = [];
 
-    // Reply to message
     if (!message.isImage && !message.isVideo) {
         actions.push({ 
             text: '↩️ Reply', 
@@ -1447,7 +1236,6 @@ function showMessageActions(message) {
         });
     }
 
-    // Edit own message
     if (!message.isImage && !message.isVideo && message.userId === currentUser?.id) {
         actions.push({ 
             text: '✏️ Edit', 
@@ -1455,11 +1243,9 @@ function showMessageActions(message) {
         });
     }
 
-    // Profile actions
     actions.push({ text: '📝 Change My Name', action: changeName });
     actions.push({ text: '🖼️ Profile Settings', action: showProfileSettings });
 
-    // Admin actions
     if (currentUser?.isOwner) {
         if (message.userId !== currentUser.id) {
             actions.push({ text: '👑 Add Moderator', action: addModerator });
@@ -1473,7 +1259,6 @@ function showMessageActions(message) {
         actions.push({ text: '🔇 Mute User', action: showMuteDialog });
     }
 
-    // Private message (not to owner if you're not owner)
     if (message.userId !== currentUser?.id) {
         actions.push({ text: '💬 Private Message', action: () => openPrivateChat(selectedUserId) });
     }
@@ -1492,13 +1277,7 @@ function replyToMessageAction(message) {
     const replyPreview = document.createElement('div');
     replyPreview.id = 'reply-preview';
     replyPreview.className = 'reply-preview-bar';
-    replyPreview.innerHTML = `
-        <div class="reply-preview-content">
-            <div class="reply-preview-label">Replying to ${esc(message.username)}</div>
-            <div class="reply-preview-text">${esc(message.text).substring(0, 50)}${message.text.length > 50 ? '...' : ''}</div>
-        </div>
-        <button class="reply-cancel-btn" onclick="cancelReply()">✕</button>
-    `;
+    replyPreview.innerHTML = '<div class="reply-preview-content"><div class="reply-preview-label">Replying to ' + esc(message.username) + '</div><div class="reply-preview-text">' + esc(message.text).substring(0, 50) + (message.text.length > 50 ? '...' : '') + '</div></div><button class="reply-cancel-btn" onclick="cancelReply()">✕</button>';
     
     const existingPreview = document.getElementById('reply-preview');
     if (existingPreview) existingPreview.remove();
@@ -1518,12 +1297,138 @@ window.cancelReply = function() {
 function editMessage(messageId, currentText) {
     const newText = prompt('Edit message:', currentText || '');
     if (newText && newText.trim() && newText.trim() !== currentText) {
-        socket.emit('edit-message', { messageId, newText: newText.trim() });
+        socket.emit('edit-message', { messageId: messageId, newText: newText.trim() });
     }
 }
 
 function deleteMessage(messageId) {
-    socket.emit('delete-message', { messageId, roomId: currentRoom });
+    socket.emit('delete-message', { messageId: messageId, roomId: currentRoom });
 }
 
-// Continue with remaining functions...
+window.showMuteDialog = function() {
+    const duration = prompt('Mute ' + selectedUsername + ' for minutes? (0 = permanent):', '10');
+    if (duration === null) return;
+    const reason = prompt('Reason:', 'Rule violation');
+    if (!reason) return;
+    socket.emit('mute-user', {
+        userId: selectedUserId,
+        username: selectedUsername,
+        duration: parseInt(duration),
+        reason: reason,
+        roomId: currentRoom
+    });
+};
+
+window.banUser = function() {
+    if (!confirm('Ban ' + selectedUsername + '?')) return;
+    const reason = prompt('Reason:', 'Serious violation');
+    if (reason) socket.emit('ban-user', { userId: selectedUserId, username: selectedUsername, reason: reason });
+};
+
+window.deleteAccount = function() {
+    if (!confirm('⚠️ DELETE ' + selectedUsername + '? This CANNOT be undone!')) return;
+    socket.emit('delete-account', { userId: selectedUserId });
+};
+
+window.addModerator = function() {
+    if (!confirm('Add ' + selectedUsername + ' as moderator?')) return;
+    socket.emit('add-moderator', { userId: selectedUserId, username: selectedUsername, roomId: currentRoom });
+};
+
+window.removeModerator = function() {
+    if (!confirm('Remove ' + selectedUsername + ' from moderators?')) return;
+    socket.emit('remove-moderator', { userId: selectedUserId, username: selectedUsername, roomId: currentRoom });
+};
+
+function showActionsMenu(actions) {
+    const menu = document.getElementById('message-actions-menu');
+    const list = document.getElementById('message-actions-list');
+    list.innerHTML = '';
+    
+    actions.forEach(action => {
+        const btn = document.createElement('button');
+        btn.className = 'action-menu-btn';
+        btn.textContent = action.text;
+        btn.onclick = (e) => { 
+            e.stopPropagation();
+            hideActionsMenu(); 
+            action.action(); 
+        };
+        list.appendChild(btn);
+    });
+
+    menu.style.display = 'flex';
+}
+
+function hideActionsMenu() {
+    document.getElementById('message-actions-menu').style.display = 'none';
+}
+
+window.showImageUpload = () => document.getElementById('image-upload-modal').classList.add('active');
+window.sendImageMessage = function() {
+    const url = document.getElementById('image-url-input').value.trim();
+    if (!url) return showAlert('Enter image URL', 'error');
+    socket.emit('send-image', { imageUrl: url });
+    document.getElementById('image-url-input').value = '';
+    hideModal('image-upload-modal');
+};
+
+window.showVideoUpload = () => document.getElementById('video-upload-modal').classList.add('active');
+window.sendVideoMessage = function() {
+    const url = document.getElementById('video-url-input').value.trim();
+    if (!url) return showAlert('Enter video URL', 'error');
+    if (!url.toLowerCase().endsWith('.mp4')) return showAlert('MP4 only', 'error');
+    socket.emit('send-video', { videoUrl: url });
+    document.getElementById('video-url-input').value = '';
+    hideModal('video-upload-modal');
+};
+
+window.showPrivateMessages = function() {
+    document.getElementById('private-messages-modal').classList.add('active');
+    loadPrivateUsersList();
+};
+
+function loadPrivateUsersList() {
+    const container = document.getElementById('private-users-list');
+    container.innerHTML = '';
+    socket.emit('get-users', { roomId: currentRoom });
+    socket.once('users-list', (users) => {
+        users.forEach(user => {
+            if (user.id === currentUser?.id) return;
+            const div = document.createElement('div');
+            div.className = 'private-user-item' + (blockedUsers.has(user.id) ? ' blocked' : '');
+            div.dataset.userId = user.id;
+            div.dataset.userName = user.displayName;
+            
+            let avatarHTML = '';
+            if (user.profilePicture) {
+                avatarHTML = '<div class="user-avatar"><img src="' + esc(user.profilePicture) + '"></div>';
+            } else {
+                avatarHTML = '<div class="user-avatar"><span>' + esc(user.avatar) + '</span></div>';
+            }
+            
+            div.innerHTML = avatarHTML + '<span>' + esc(user.displayName) + '</span>';
+            div.onclick = () => openPrivateChat(user.id);
+            container.appendChild(div);
+        });
+    });
+}
+
+function openPrivateChat(userId) {
+    if (blockedUsers.has(userId)) {
+        showAlert('You have blocked this user', 'error');
+        return;
+    }
+    currentPrivateChatUser = userId;
+    socket.emit('get-private-messages', { withUserId: userId });
+    document.getElementById('private-messages-modal').classList.add('active');
+    
+    const user = Array.from(document.querySelectorAll('.user-item'))
+        .find(el => el.dataset.userId === userId);
+    if (user) {
+        document.getElementById('private-chat-name').textContent = user.dataset.userName;
+        document.getElementById('block-user-btn').style.display = 'inline-block';
+    }
+}
+
+window.sen
