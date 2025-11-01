@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Cold Room V3.0 - COMPLETE CLIENT (Fixed)
+// Cold Room V3.0 - COMPLETE FIXED CLIENT
 // © 2025 Cold Room - All Rights Reserved
 // ═══════════════════════════════════════════════════════════════
 
@@ -12,13 +12,9 @@ let systemSettings = {};
 let selectedUserId = null;
 let selectedUsername = null;
 let currentPrivateChatUser = null;
-let confirmCallback = null;
 let editingRoomId = null;
 let isReconnecting = false;
-let blockedUsers = new Set();
-let replyToMessage = null;
 let longPressTimer = null;
-let selectedRoomForActions = null;
 
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('✅ DOM Ready');
@@ -32,8 +28,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     await fetchInitialSettings();
     initializeSocket();
     setupEventListeners();
-    createSnowfall();
-    drawSnowman();
+    createHypnoticSpiral();
     
     console.log('✅ Cold Room Initialized');
 });
@@ -123,7 +118,6 @@ function setupSocketListeners() {
     });
 
     socket.on('new-private-message', (msg) => {
-        if (blockedUsers.has(msg.from)) return;
         if (currentPrivateChatUser === msg.from) {
             addPrivateMessage(msg);
         }
@@ -218,14 +212,6 @@ function setupSocketListeners() {
     socket.on('support-messages-list', displaySupportMessages);
     socket.on('muted-list', displayMutedList);
     socket.on('banned-list', displayBannedList);
-    socket.on('blocked-users', (list) => {
-        blockedUsers = new Set(list);
-    });
-    socket.on('room-media-data', (data) => {
-        document.getElementById('room-video-url').value = data.videoUrl || '';
-        document.getElementById('room-music-url').value = data.musicUrl || '';
-        document.getElementById('room-music-volume').value = data.musicVolume || 0.5;
-    });
 }
 
 function setupEventListeners() {
@@ -351,7 +337,6 @@ function handleLoginSuccess(data) {
         currentUser.isModerator = data.room.moderators?.includes(currentUser.id) || false;
         currentRoom = data.room.id;
         systemSettings = data.systemSettings;
-        blockedUsers = new Set(data.blockedUsers || []);
 
         document.getElementById('current-user-name').textContent = currentUser.displayName;
         updateCurrentUserAvatar();
@@ -361,7 +346,7 @@ function handleLoginSuccess(data) {
         document.getElementById('chat-screen').classList.add('active');
 
         stopLoginMusic();
-        handleRoomMusic(data.room);
+        playChatMusic();
         hideLoading();
         showAlert('Welcome ' + currentUser.displayName + '! ❄️', 'success');
 
@@ -377,18 +362,13 @@ function handleLoginSuccess(data) {
         if (currentUser.isOwner) {
             document.getElementById('owner-panel-btn').style.display = 'inline-block';
             document.getElementById('owner-tools').style.display = 'flex';
-        } else if (currentUser.isModerator) {
-            document.getElementById('moderator-panel-btn').style.display = 'inline-block';
         }
 
         if (data.room.partyMode) togglePartyEffects(true);
 
         applySiteSettings();
         startHeartbeat();
-
-        if (data.room.videoUrl) {
-            showRoomVideo(data.room.videoUrl);
-        }
+        createHypnoticSpiral();
     } catch (e) {
         console.error('Login success error:', e);
     }
@@ -407,18 +387,12 @@ function handleRoomJoined(data) {
     togglePartyEffects(data.room.partyMode || false);
     socket.emit('get-users', { roomId: currentRoom });
     scrollToBottom();
-
-    handleRoomMusic(data.room);
-
-    if (data.room.videoUrl) {
-        showRoomVideo(data.room.videoUrl);
-    } else {
-        hideRoomVideo();
-    }
 }
 
 window.showProfileSettings = function() {
-    document.getElementById('profile-settings-modal').classList.add('active');
+    const modal = document.getElementById('profile-settings-modal');
+    if (!modal) return;
+    modal.classList.add('active');
     
     const previewImg = document.getElementById('profile-preview-img');
     const previewEmoji = document.getElementById('profile-preview-emoji');
@@ -461,6 +435,8 @@ function updateCurrentUserAvatar() {
     const avatarImg = document.getElementById('current-user-avatar-img');
     const avatarEmoji = document.getElementById('current-user-avatar');
     
+    if (!avatarImg || !avatarEmoji) return;
+    
     if (currentUser.profilePicture) {
         avatarImg.src = currentUser.profilePicture;
         avatarImg.style.display = 'block';
@@ -486,17 +462,7 @@ function sendMessage() {
     if (!text) return;
     if (!socket || !socket.connected) return showAlert('Reconnecting...', 'warning');
     
-    const payload = {
-        text: text,
-        roomId: currentRoom
-    };
-    
-    if (replyToMessage) {
-        payload.replyTo = replyToMessage;
-        cancelReply();
-    }
-    
-    socket.emit('send-message', payload);
+    socket.emit('send-message', { text: text, roomId: currentRoom });
     textarea.value = '';
 }
 
@@ -530,12 +496,7 @@ function addMessage(message) {
     } else if (message.isImage) {
         messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div><div class="message-image"><img src="' + esc(message.imageUrl) + '" alt="Image" style="max-width: 100%; border-radius: 10px;"></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     } else {
-        let replyHTML = '';
-        if (message.replyTo) {
-            replyHTML = '<div class="message-reply-preview"><div class="reply-indicator"></div><div class="reply-content"><div class="reply-user">↩️ ' + esc(message.replyTo.username) + '</div><div class="reply-text">' + esc(message.replyTo.text).substring(0, 50) + (message.replyTo.text.length > 50 ? '...' : '') + '</div></div></div>';
-        }
-        
-        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-text">' + esc(message.text) + (message.edited ? ' <small>(edited)</small>' : '') + '</div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div><div class="message-text">' + esc(message.text) + (message.edited ? ' <small>(edited)</small>' : '') + '</div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     }
 
     messageDiv.innerHTML = messageHTML;
@@ -555,13 +516,6 @@ function addMessage(message) {
 
 function showMessageActions(message) {
     const actions = [];
-
-    if (!message.isImage && !message.isVideo) {
-        actions.push({ 
-            text: '↩️ Reply', 
-            action: () => replyToMessageAction(message) 
-        });
-    }
 
     if (!message.isImage && !message.isVideo && message.userId === currentUser?.id) {
         actions.push({ 
@@ -593,33 +547,6 @@ function showMessageActions(message) {
     actions.push({ text: '❌ Cancel', action: hideActionsMenu });
     showActionsMenu(actions);
 }
-
-function replyToMessageAction(message) {
-    replyToMessage = {
-        id: message.id,
-        username: message.username,
-        text: message.text
-    };
-    
-    const replyPreview = document.createElement('div');
-    replyPreview.id = 'reply-preview';
-    replyPreview.className = 'reply-preview-bar';
-    replyPreview.innerHTML = '<div class="reply-preview-content"><div class="reply-preview-label">Replying to ' + esc(message.username) + '</div><div class="reply-preview-text">' + esc(message.text).substring(0, 50) + (message.text.length > 50 ? '...' : '') + '</div></div><button class="reply-cancel-btn" onclick="cancelReply()">✕</button>';
-    
-    const existingPreview = document.getElementById('reply-preview');
-    if (existingPreview) existingPreview.remove();
-    
-    const chatTools = document.querySelector('.chat-tools');
-    chatTools.insertBefore(replyPreview, chatTools.firstChild);
-    
-    document.getElementById('message-input').focus();
-}
-
-window.cancelReply = function() {
-    replyToMessage = null;
-    const preview = document.getElementById('reply-preview');
-    if (preview) preview.remove();
-};
 
 function editMessage(messageId, currentText) {
     const newText = prompt('Edit message:', currentText || '');
@@ -723,7 +650,7 @@ function loadPrivateUsersList() {
         users.forEach(user => {
             if (user.id === currentUser?.id) return;
             const div = document.createElement('div');
-            div.className = 'private-user-item' + (blockedUsers.has(user.id) ? ' blocked' : '');
+            div.className = 'private-user-item';
             div.dataset.userId = user.id;
             div.dataset.userName = user.displayName;
             
@@ -742,10 +669,11 @@ function loadPrivateUsersList() {
 }
 
 function openPrivateChat(userId) {
-    if (blockedUsers.has(userId)) {
-        showAlert('You have blocked this user', 'error');
+    if (userId === 'owner_cold_001' && currentUser.id !== 'owner_cold_001') {
+        showAlert('Cannot block or message owner directly', 'error');
         return;
     }
+    
     currentPrivateChatUser = userId;
     socket.emit('get-private-messages', { withUserId: userId });
     document.getElementById('private-messages-modal').classList.add('active');
@@ -753,14 +681,7 @@ function openPrivateChat(userId) {
     const user = Array.from(document.querySelectorAll('.user-item'))
         .find(el => el.dataset.userId === userId);
     if (user) {
-        document.getElementById('private-chat-name').textContent = user.dataset.userName;
-        document.getElementById('block-user-btn').style.display = 'inline-block';
-        
-        if (blockedUsers.has(userId)) {
-            document.getElementById('block-user-btn').textContent = '✅ Unblock';
-        } else {
-            document.getElementById('block-user-btn').textContent = '🚫 Block';
-        }
+        document.getElementById('private-header').textContent = 'Chat with ' + user.dataset.userName;
     }
 }
 
@@ -770,23 +691,6 @@ window.sendPrivateMessage = function() {
     if (!text || !currentPrivateChatUser) return;
     socket.emit('send-private-message', { toUserId: currentPrivateChatUser, text: text });
     input.value = '';
-};
-
-window.toggleBlockUser = function() {
-    if (!currentPrivateChatUser) return;
-    
-    if (blockedUsers.has(currentPrivateChatUser)) {
-        socket.emit('unblock-user', { userId: currentPrivateChatUser });
-        blockedUsers.delete(currentPrivateChatUser);
-        showAlert('User unblocked', 'success');
-        document.getElementById('block-user-btn').textContent = '🚫 Block';
-    } else {
-        socket.emit('block-user', { userId: currentPrivateChatUser });
-        blockedUsers.add(currentPrivateChatUser);
-        showAlert('User blocked', 'success');
-        document.getElementById('block-user-btn').textContent = '✅ Unblock';
-        hideModal('private-messages-modal');
-    }
 };
 
 function displayPrivateMessages(messages, withUserId) {
@@ -884,7 +788,6 @@ function updateRoomsList(rooms) {
         if (currentUser && (currentUser.isOwner || room.creatorId === currentUser.id)) {
             div.addEventListener('mousedown', () => {
                 longPressTimer = setTimeout(() => {
-                    selectedRoomForActions = room;
                     showRoomActions(room);
                 }, 800);
             });
@@ -894,7 +797,6 @@ function updateRoomsList(rooms) {
             div.addEventListener('touchstart', (e) => {
                 longPressTimer = setTimeout(() => {
                     e.preventDefault();
-                    selectedRoomForActions = room;
                     showRoomActions(room);
                 }, 800);
             });
@@ -1017,7 +919,6 @@ window.showRoomMediaSettings = function() {
     if (!currentUser?.isOwner) return showAlert('Owner only', 'error');
     document.getElementById('room-media-modal').classList.add('active');
     document.getElementById('current-room-name').textContent = document.getElementById('room-info').textContent;
-    socket.emit('get-room-media', { roomId: currentRoom });
 };
 
 window.updateRoomVideo = function() {
@@ -1046,57 +947,7 @@ window.removeRoomMusic = function() {
 };
 
 function handleRoomMediaUpdate(data) {
-    if (data.type === 'video') {
-        if (data.videoUrl) {
-            showRoomVideo(data.videoUrl);
-        } else {
-            hideRoomVideo();
-        }
-    } else if (data.type === 'music') {
-        handleRoomMusic({ musicUrl: data.musicUrl, musicVolume: data.musicVolume });
-    }
     showAlert(data.message, 'success');
-}
-
-function showRoomVideo(url) {
-    const container = document.createElement('div');
-    container.id = 'room-video-container';
-    container.className = 'room-video-player';
-    container.innerHTML = '<div class="video-header-bar"><span>Room Video</span><button class="video-close-btn" onclick="hideRoomVideo()">✕</button></div><div class="video-content">' + (detectVideoType(url) === 'youtube' ? '<iframe src="https://www.youtube.com/embed/' + extractYoutubeId(url) + '" allowfullscreen></iframe>' : '<video controls><source src="' + url + '" type="video/mp4"></video>') + '</div>';
-    
-    const existing = document.getElementById('room-video-container');
-    if (existing) existing.remove();
-    
-    document.querySelector('.chat-messages').appendChild(container);
-}
-
-window.hideRoomVideo = function() {
-    const container = document.getElementById('room-video-container');
-    if (container) container.remove();
-};
-
-function handleRoomMusic(roomData) {
-    const audio = document.getElementById('room-music');
-    if (roomData.musicUrl) {
-        audio.src = roomData.musicUrl;
-        audio.volume = roomData.musicVolume || 0.5;
-        audio.loop = true;
-        audio.play().catch(() => {});
-    } else {
-        audio.pause();
-        audio.src = '';
-    }
-}
-
-function detectVideoType(url) {
-    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
-    if (url.toLowerCase().endsWith('.mp4')) return 'mp4';
-    return 'mp4';
-}
-
-function extractYoutubeId(url) {
-    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/);
-    return match ? match[1] : url;
 }
 
 window.togglePartyMode = function() {
@@ -1116,12 +967,6 @@ window.showOwnerPanel = function() {
     document.getElementById('owner-panel-modal').classList.add('active');
     switchOwnerTab('muted');
     loadRoomsForClean();
-};
-
-window.showModeratorPanel = function() {
-    document.getElementById('moderator-panel-modal').classList.add('active');
-    socket.emit('get-muted-list');
-    socket.once('muted-list', displayModMutedList);
 };
 
 window.switchOwnerTab = function(tabName) {
@@ -1256,40 +1101,8 @@ function displaySupportMessages(messages) {
     });
 }
 
-function displayModMutedList(list) {
-    const container = document.getElementById('mod-muted-list');
-    if (!container) return;
-    container.innerHTML = '';
-    if (list.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:2rem;">No muted users</div>';
-        return;
-    }
-    list.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'owner-item';
-        div.innerHTML = '<div class="owner-item-header"><div><input type="checkbox" class="mod-muted-checkbox" data-user-id="' + item.userId + '"><strong>' + esc(item.username) + '</strong></div><button class="modern-btn small" onclick="unmute(\'' + item.userId + '\')">Unmute</button></div>';
-        container.appendChild(div);
-    });
-}
-
-window.unmute = function(userId) {
-    socket.emit('unmute-user', { userId: userId });
-    setTimeout(() => socket.emit('get-muted-list'), 500);
-};
-
-window.unban = function(userId) {
-    socket.emit('unban-user', { userId: userId });
-    setTimeout(() => socket.emit('get-banned-list'), 500);
-};
-
-window.deleteSupportMessage = function(messageId) {
-    socket.emit('delete-support-message', { messageId: messageId });
-    setTimeout(() => socket.emit('get-support-messages'), 500);
-};
-
 window.selectAllMuted = () => document.querySelectorAll('.muted-checkbox').forEach(cb => cb.checked = true);
 window.selectAllBanned = () => document.querySelectorAll('.banned-checkbox').forEach(cb => cb.checked = true);
-window.selectAllModMuted = () => document.querySelectorAll('.mod-muted-checkbox').forEach(cb => cb.checked = true);
 
 window.unmuteSelected = function() {
     const selected = Array.from(document.querySelectorAll('.muted-checkbox:checked')).map(cb => cb.dataset.userId);
@@ -1309,16 +1122,19 @@ window.unbanSelected = function() {
     }
 };
 
-window.unmuteModSelected = function() {
-    const selected = Array.from(document.querySelectorAll('.mod-muted-checkbox:checked')).map(cb => cb.dataset.userId);
-    if (selected.length === 0) return showAlert('Select users first', 'error');
-    if (confirm('Unmute ' + selected.length + ' users?')) {
-        selected.forEach(userId => socket.emit('unmute-user', { userId: userId }));
-        setTimeout(() => {
-            socket.emit('get-muted-list');
-            socket.once('muted-list', displayModMutedList);
-        }, 500);
-    }
+window.unmute = function(userId) {
+    socket.emit('unmute-user', { userId: userId });
+    setTimeout(() => socket.emit('get-muted-list'), 500);
+};
+
+window.unban = function(userId) {
+    socket.emit('unban-user', { userId: userId });
+    setTimeout(() => socket.emit('get-banned-list'), 500);
+};
+
+window.deleteSupportMessage = function(messageId) {
+    socket.emit('delete-support-message', { messageId: messageId });
+    setTimeout(() => socket.emit('get-support-messages'), 500);
 };
 
 window.hideModal = (modalId) => document.getElementById(modalId).classList.remove('active');
@@ -1385,14 +1201,10 @@ function applySiteSettings() {
     document.getElementById('main-title').textContent = systemSettings.siteTitle;
     document.getElementById('header-title').textContent = systemSettings.siteTitle;
 
-    document.body.classList.remove('black-theme', 'red-theme');
+    document.body.classList.remove('black-theme');
     if (systemSettings.backgroundColor === 'black') {
         document.body.classList.add('black-theme');
-    } else if (systemSettings.backgroundColor === 'red') {
-        document.body.classList.add('red-theme');
     }
-
-    updateSnowmanTheme();
 }
 
 function updateMusicPlayers() {
@@ -1410,6 +1222,13 @@ function updateMusicPlayers() {
     }
 }
 
+window.playLoginMusic = function() {
+    const audio = document.getElementById('login-music');
+    if (audio && audio.src) {
+        audio.play().catch(() => {});
+    }
+};
+
 function stopLoginMusic() {
     const audio = document.getElementById('login-music');
     if (audio) {
@@ -1418,129 +1237,63 @@ function stopLoginMusic() {
     }
 }
 
+window.playChatMusic = function() {
+    const audio = document.getElementById('chat-music');
+    if (audio && audio.src) {
+        audio.play().catch(() => {});
+    }
+};
+
 function startHeartbeat() {
     setInterval(() => {
         if (socket && socket.connected) socket.emit('ping');
     }, 30000);
 }
 
-function createSnowfall() {
-    const container = document.getElementById('snowflakes');
-    if (!container) return;
-    container.innerHTML = '';
-    
-    const isRedTheme = document.body.classList.contains('red-theme');
-    const symbol = isRedTheme ? '🔥' : '❄';
-    
-    for (let i = 0; i < 50; i++) {
-        const snowflake = document.createElement('div');
-        snowflake.className = 'snowflake';
-        snowflake.textContent = symbol;
-        snowflake.style.cssText = 'left: ' + (Math.random() * 100) + '%; animation-duration: ' + (Math.random() * 3 + 2) + 's; animation-delay: ' + (Math.random() * 5) + 's; font-size: ' + (Math.random() * 10 + 10) + 'px;';
-        container.appendChild(snowflake);
-    }
-}
-
-function drawSnowman() {
-    const canvas = document.getElementById('snowman-canvas');
+function createHypnoticSpiral() {
+    const canvas = document.getElementById('hypnotic-spiral');
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
-    canvas.width = 200;
-    canvas.height = 300;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
     
-    const isRedTheme = document.body.classList.contains('red-theme');
-    const isBlackTheme = document.body.classList.contains('black-theme');
+    let rotation = 0;
     
-    let bodyColor = 'white';
-    let outlineColor = '#4a90e2';
-    
-    if (isRedTheme) {
-        bodyColor = '#ff4500';
-        outlineColor = '#8b0000';
-    } else if (isBlackTheme) {
-        bodyColor = '#333333';
-        outlineColor = '#666666';
+    function drawSpiral() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const maxRadius = Math.min(canvas.width, canvas.height) * 0.4;
+        
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(rotation);
+        
+        const isBlackTheme = document.body.classList.contains('black-theme');
+        const color1 = isBlackTheme ? '#666666' : '#4a90e2';
+        const color2 = isBlackTheme ? '#333333' : '#1e3a8a';
+        
+        for (let i = 0; i < 8; i++) {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, maxRadius, 
+                (i * Math.PI / 4), 
+                ((i + 1) * Math.PI / 4));
+            ctx.closePath();
+            ctx.fillStyle = i % 2 === 0 ? color1 : color2;
+            ctx.globalAlpha = 0.1;
+            ctx.fill();
+        }
+        
+        ctx.restore();
+        
+        rotation += 0.005;
+        requestAnimationFrame(drawSpiral);
     }
     
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Body circles
-    ctx.strokeStyle = outlineColor;
-    ctx.fillStyle = bodyColor;
-    ctx.lineWidth = 3;
-    
-    // Bottom
-    ctx.beginPath();
-    ctx.arc(100, 220, 60, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    
-    // Middle
-    ctx.beginPath();
-    ctx.arc(100, 140, 45, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    
-    // Head
-    ctx.beginPath();
-    ctx.arc(100, 70, 35, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    
-    // Eyes
-    ctx.fillStyle = 'black';
-    ctx.beginPath();
-    ctx.arc(85, 65, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(115, 65, 4, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Nose (carrot)
-    ctx.fillStyle = isRedTheme ? '#ffaa00' : '#ff6600';
-    ctx.beginPath();
-    ctx.moveTo(100, 75);
-    ctx.lineTo(100, 85);
-    ctx.lineTo(120, 78);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Smile
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(100, 75, 15, 0.2, Math.PI - 0.2);
-    ctx.stroke();
-    
-    // Buttons
-    ctx.fillStyle = 'black';
-    [130, 150, 170].forEach(y => {
-        ctx.beginPath();
-        ctx.arc(100, y, 4, 0, Math.PI * 2);
-        ctx.fill();
-    });
-    
-    // Hat
-    ctx.fillStyle = isRedTheme ? '#8b0000' : 'black';
-    ctx.fillRect(70, 40, 60, 8);
-    ctx.fillRect(80, 15, 40, 25);
-}
-
-function updateSnowmanTheme() {
-    createSnowfall();
-    drawSnowman();
-}
-
-// Initialize on load
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        createSnowfall();
-        drawSnowman();
-    });
-} else {
-    createSnowfall();
-    drawSnowman();
+    drawSpiral();
 }
 
 console.log('✅ Cold Room V3.0 - Script Loaded Successfully');
