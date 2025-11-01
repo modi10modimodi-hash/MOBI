@@ -13,14 +13,12 @@
 </head>
 <body>
     
-    <!-- Background Effects -->
-    <div class="snowflakes" id="snowflakes"></div>
-    <canvas id="snowman-canvas"></canvas>
+    <!-- Hypnotic Spiral Background -->
+    <canvas id="hypnotic-spiral"></canvas>
     
     <!-- Background Music -->
     <audio id="login-music" loop></audio>
     <audio id="chat-music" loop></audio>
-    <audio id="room-music" loop></audio>
 
     <!-- Login Screen -->
     <div id="login-screen" class="screen active">
@@ -48,6 +46,9 @@
                     </div>
                     <button class="modern-btn" onclick="login()">
                         <span class="btn-text">Enter Chat</span>
+                    </button>
+                    <button class="modern-btn small" onclick="playLoginMusic()" style="margin-top: 1rem;">
+                        ▶️ Play Music
                     </button>
                 </div>
                 
@@ -91,7 +92,7 @@
             <div class="copyright-notice">
                 <strong>© 2025 Cold Room V3.0</strong><br>
                 Owner: Cold Room King<br>
-                <small>All rights reserved - Complete Enhanced Edition</small>
+                <small>All rights reserved</small>
             </div>
         </div>
     </div>
@@ -126,10 +127,6 @@
                     <button class="modern-btn small" id="owner-panel-btn" 
                             style="display: none;" onclick="showOwnerPanel()">
                         👑 Owner Panel
-                    </button>
-                    <button class="modern-btn small" id="moderator-panel-btn" 
-                            style="display: none;" onclick="showModeratorPanel()">
-                        ⭐ Muted Users
                     </button>
                     <button class="modern-btn small" onclick="toggleRoomsList()">
                         🏠 Rooms
@@ -195,6 +192,9 @@
                             </button>
                             <button class="tool-btn" onclick="togglePartyMode()" title="Party Mode">
                                 🎉
+                            </button>
+                            <button class="tool-btn" onclick="playChatMusic()" title="Play Music">
+                                ▶️
                             </button>
                         </div>
                         <form id="message-form" class="message-form">
@@ -347,14 +347,9 @@
             <div class="modal-body private-chat">
                 <div class="private-users-list" id="private-users-list"></div>
                 <div class="private-messages-area">
-                    <div class="private-header" id="private-header">
-                        <span id="private-chat-name">Select a user</span>
-                        <button class="modern-btn small" id="block-user-btn" style="display:none;" onclick="toggleBlockUser()">
-                            🚫 Block
-                        </button>
-                    </div>
+                    <div class="private-header" id="private-header">Select a user</div>
                     <div class="private-messages" id="private-messages"></div>
-                    <div class="private-input-area" id="private-input-area">
+                    <div class="private-input-area">
                         <textarea id="private-message-input" class="modern-input" 
                                   placeholder="Type message..." maxlength="500" rows="2"></textarea>
                         <button class="modern-btn" onclick="sendPrivateMessage()">
@@ -431,7 +426,6 @@
                                 <select id="setting-color" class="modern-input">
                                     <option value="blue">🔵 Blue (Ice)</option>
                                     <option value="black">⚫ Black</option>
-                                    <option value="red">🔴 Red (Fire)</option>
                                 </select>
                                 <button class="modern-btn small" onclick="updateColor()">Update & Save</button>
                             </div>
@@ -444,7 +438,7 @@
                                 <button class="modern-btn small" onclick="updateLoginMusic()">Update & Save</button>
                             </div>
                             <div class="setting-item">
-                                <label>Global Chat Music URL (MP3):</label>
+                                <label>Chat Music URL (MP3):</label>
                                 <input type="text" id="setting-chat-music" class="modern-input" 
                                        placeholder="https://...music.mp3">
                                 <label>Volume:</label>
@@ -462,21 +456,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Moderator Panel Modal -->
-    <div id="moderator-panel-modal" class="modal">
-        <div class="modal-content glass-card">
-            <span class="modal-close" onclick="hideModal('moderator-panel-modal')">&times;</span>
-            <h2>⭐ Moderator Panel - Muted Users</h2>
-            <div class="modal-body">
-                <div class="owner-actions">
-                    <button class="modern-btn small" onclick="selectAllModMuted()">Select All</button>
-                    <button class="modern-btn small" onclick="unmuteModSelected()">Unmute Selected</button>
-                </div>
-                <div id="mod-muted-list" class="owner-list"></div>
             </div>
         </div>
     </div>
