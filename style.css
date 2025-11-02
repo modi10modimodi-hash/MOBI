@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cold Room V3.0 - Complete Professional Styling
+   Cold Room V3.0 - Complete Professional Styling - FIXED
    © 2025 Cold Room - All Rights Reserved
    ═══════════════════════════════════════════════════════════════ */
 
@@ -36,6 +36,7 @@ body.black-theme {
     --scrollbar-track: rgba(255, 255, 255, 0.02);
 }
 
+/* ✅ RED THEME ADDED */
 body.red-theme {
     --primary-bg: linear-gradient(135deg, #8b0000 0%, #4a0000 50%, #8b0000 100%);
     --ice-blue: #dc2626;
@@ -63,7 +64,6 @@ body {
     50% { background-position: 100% 50%; }
 }
 
-/* Hypnotic Spiral Background */
 #hypnotic-spiral {
     position: fixed;
     top: 0;
@@ -75,7 +75,6 @@ body {
     opacity: 0.15;
 }
 
-/* Screens */
 .screen {
     display: none;
     min-height: 100vh;
@@ -95,7 +94,6 @@ body {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* Login Screen */
 .login-container {
     max-width: 900px;
     margin: 0 auto;
@@ -164,7 +162,6 @@ body {
     margin: 2rem 0;
 }
 
-/* Glass Cards */
 .glass-card {
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
@@ -191,7 +188,6 @@ body {
     text-align: center;
 }
 
-/* Inputs */
 .input-group {
     display: flex;
     flex-direction: column;
@@ -227,7 +223,6 @@ select.modern-input {
     cursor: pointer;
 }
 
-/* Buttons */
 .modern-btn {
     background: linear-gradient(135deg, var(--ice-blue), var(--deep-blue));
     border: none;
@@ -282,7 +277,6 @@ select.modern-input {
     font-size: 0.9rem;
 }
 
-/* Loading overlay */
 #loading-overlay {
     position: fixed;
     top: 0;
@@ -320,7 +314,6 @@ select.modern-input {
     100% { transform: rotate(360deg); }
 }
 
-/* Support */
 .support-section {
     margin-top: 1.5rem;
     border: 2px solid rgba(239, 68, 68, 0.3);
@@ -330,7 +323,6 @@ select.modern-input {
     color: #fca5a5;
 }
 
-/* Copyright */
 .copyright-notice {
     text-align: center;
     margin-top: 2rem;
@@ -342,7 +334,6 @@ select.modern-input {
     line-height: 1.6;
 }
 
-/* Chat container - FULL SCREEN */
 .chat-container {
     display: flex;
     flex-direction: column;
@@ -355,7 +346,6 @@ select.modern-input {
     backdrop-filter: blur(10px);
 }
 
-/* Header */
 .chat-header {
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
@@ -460,7 +450,6 @@ select.modern-input {
     flex-wrap: wrap;
 }
 
-/* Badges */
 .badge {
     display: inline-block;
     padding: 0.3rem 0.7rem;
@@ -482,7 +471,6 @@ select.modern-input {
     box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
 }
 
-/* Main chat area - FULL HEIGHT */
 .chat-main {
     display: flex;
     flex: 1;
@@ -491,7 +479,6 @@ select.modern-input {
     height: calc(100vh - 80px);
 }
 
-/* Sidebars */
 .sidebar {
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
@@ -551,7 +538,6 @@ select.modern-input {
     transform: rotate(90deg) scale(1.1);
 }
 
-/* Rooms & Users lists */
 .rooms-list, .users-list {
     display: flex;
     flex-direction: column;
@@ -611,7 +597,6 @@ select.modern-input {
     opacity: 0.7;
 }
 
-/* User items */
 .user-item {
     display: flex;
     align-items: center;
@@ -672,7 +657,6 @@ select.modern-input {
     color: var(--text-primary);
 }
 
-/* Chat content - FULL WIDTH */
 .chat-content {
     flex: 1;
     display: flex;
@@ -681,7 +665,6 @@ select.modern-input {
     width: 100%;
 }
 
-/* Chat messages - SCROLLABLE */
 .chat-messages {
     flex: 1;
     overflow-y: auto;
@@ -693,7 +676,6 @@ select.modern-input {
     scroll-behavior: smooth;
 }
 
-/* Welcome message */
 .welcome-message {
     text-align: center;
     padding: 3rem 2rem;
@@ -723,7 +705,6 @@ select.modern-input {
     color: var(--light-blue);
 }
 
-/* Messages */
 .message {
     background: var(--glass-bg);
     backdrop-filter: blur(10px);
@@ -758,7 +739,6 @@ select.modern-input {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* Message structure with avatar - SEPARATED */
 .message-container {
     display: flex;
     gap: 1rem;
@@ -823,13 +803,13 @@ select.modern-input {
     margin: 0.5rem 0;
 }
 
-.message-image img, .message-video video {
+.message-image img, .message-video video, .message-video iframe {
     max-width: 100%;
     border-radius: 10px;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
-/* Reply preview */
+/* ✅ REPLY FEATURE STYLES */
 .message-reply-preview {
     display: flex;
     gap: 0.5rem;
@@ -865,7 +845,6 @@ select.modern-input {
     white-space: nowrap;
 }
 
-/* Reply preview bar (when replying) */
 .reply-preview-bar {
     display: flex;
     align-items: center;
@@ -922,14 +901,12 @@ select.modern-input {
     opacity: 0.6;
 }
 
-/* Read receipt */
 .read-receipt {
     font-size: 0.9rem;
     opacity: 0.6;
     margin-left: 0.5rem;
 }
 
-/* Chat tools - FIXED AT BOTTOM */
 .chat-tools {
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
@@ -995,7 +972,7 @@ select.modern-input {
     box-shadow: 0 5px 15px rgba(74, 144, 226, 0.3);
 }
 
-/* Modals */
+/* ✅ MODALS - FIXED CENTER POSITION */
 .modal {
     display: none;
     position: fixed;
@@ -1009,6 +986,8 @@ select.modern-input {
     justify-content: center;
     align-items: center;
     animation: fadeIn 0.3s ease-out;
+    overflow-y: auto;
+    padding: 2rem;
 }
 
 .modal.active {
@@ -1018,10 +997,11 @@ select.modern-input {
 .modal-content {
     max-width: 600px;
     width: 90%;
-    max-height: 90vh;
+    max-height: 85vh;
     overflow-y: auto;
     animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
+    margin: auto;
 }
 
 .modal-content.large-modal {
@@ -1066,7 +1046,6 @@ select.modern-input {
     margin-top: 1rem;
 }
 
-/* Profile Settings */
 .profile-preview {
     text-align: center;
     margin-bottom: 2rem;
@@ -1096,7 +1075,6 @@ select.modern-input {
     font-size: 4rem;
 }
 
-/* Owner Panel */
 .owner-tabs {
     display: flex;
     gap: 0.5rem;
@@ -1183,7 +1161,6 @@ select.modern-input {
     flex-wrap: wrap;
 }
 
-/* Settings grid */
 .settings-grid {
     display: grid;
     gap: 1.5rem;
@@ -1208,7 +1185,7 @@ select.modern-input {
     margin: 0.5rem 0;
 }
 
-/* Actions Menu */
+/* ✅ ACTIONS MENU - FIXED CENTER */
 .actions-menu {
     position: fixed;
     top: 50%;
@@ -1268,12 +1245,13 @@ select.modern-input {
     background: rgba(239, 68, 68, 0.4);
 }
 
-/* Private chat - FIXED LAYOUT */
+/* ✅ PRIVATE CHAT - FIXED LAYOUT */
 .private-chat {
     display: grid;
     grid-template-columns: 220px 1fr;
     gap: 1.5rem;
     height: 500px;
+    max-height: 70vh;
 }
 
 .private-users-list {
@@ -1286,6 +1264,7 @@ select.modern-input {
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
 }
 
 .private-header {
@@ -1297,7 +1276,7 @@ select.modern-input {
     flex-shrink: 0;
 }
 
-/* CRITICAL: Private messages container - SCROLLABLE */
+/* ✅ FIXED: Private messages MUST scroll, not move */
 .private-messages {
     flex: 1;
     overflow-y: auto;
@@ -1310,17 +1289,20 @@ select.modern-input {
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
+    min-height: 0;
 }
 
-/* CRITICAL: Private input area - FIXED AT BOTTOM */
+/* ✅ FIXED: Input area stays at bottom */
 .private-input-area {
     display: flex;
     gap: 0.8rem;
     flex-shrink: 0;
+    align-items: flex-end;
 }
 
 .private-input-area textarea { 
-    flex: 1; 
+    flex: 1;
+    min-height: 60px;
 }
 
 .private-user-item {
@@ -1342,7 +1324,6 @@ select.modern-input {
     transform: translateX(5px);
 }
 
-/* Party mode */
 body.party-mode {
     animation: partyBackground 2s ease-in-out infinite;
 }
@@ -1354,7 +1335,6 @@ body.party-mode {
     75% { filter: hue-rotate(270deg); }
 }
 
-/* Scrollbars */
 ::-webkit-scrollbar { 
     width: 10px; 
     height: 10px; 
@@ -1380,7 +1360,6 @@ body.party-mode {
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); 
 }
 
-/* Responsive */
 @media (max-width: 1024px) {
     .sidebar {
         position: fixed;
@@ -1518,7 +1497,6 @@ body.party-mode {
     }
 }
 
-/* Utilities */
 .text-center { 
     text-align: center; 
 }
@@ -1559,7 +1537,6 @@ body,
                 color 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Accessibility */
 * { 
     -webkit-font-smoothing: antialiased; 
     -moz-osx-font-smoothing: grayscale; 
@@ -1596,4 +1573,4 @@ img {
     }
 }
 
-/* END - Cold Room V3.0 Complete Styles */
+/* END */
