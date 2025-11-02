@@ -248,7 +248,7 @@
                 <h3>Current Room: <span id="current-room-name"></span></h3>
                 
                 <div class="setting-item">
-                    <label>Room Video (YouTube/MP4):</label>
+                    <label>Room Video (YouTube or MP4):</label>
                     <input type="text" id="room-video-url" class="modern-input" 
                            placeholder="YouTube URL or MP4 URL">
                     <button class="modern-btn small" onclick="updateRoomVideo()">Set Video</button>
@@ -328,9 +328,9 @@
             <h2>🎥 Send Video</h2>
             <div class="modal-body">
                 <input type="text" id="video-url-input" class="modern-input" 
-                       placeholder="Video URL (MP4 format)">
+                       placeholder="YouTube URL or MP4 URL">
                 <p style="margin: 0.5rem 0; font-size: 0.85rem; opacity: 0.8;">
-                    ⚠️ Only MP4 video URLs supported
+                    ✅ Supports YouTube and MP4 videos
                 </p>
                 <button class="modern-btn" onclick="sendVideoMessage()">
                     Send Video
@@ -426,6 +426,7 @@
                                 <select id="setting-color" class="modern-input">
                                     <option value="blue">🔵 Blue (Ice)</option>
                                     <option value="black">⚫ Black</option>
+                                    <option value="red">🔴 Red</option>
                                 </select>
                                 <button class="modern-btn small" onclick="updateColor()">Update & Save</button>
                             </div>
