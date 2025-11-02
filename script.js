@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Cold Room V3.0 - COMPLETE FIXED CLIENT
+// Cold Room V3.0 - COMPLETE FIXED CLIENT WITH ALL FEATURES
 // © 2025 Cold Room - All Rights Reserved
 // ═══════════════════════════════════════════════════════════════
 
@@ -15,6 +15,7 @@ let currentPrivateChatUser = null;
 let editingRoomId = null;
 let isReconnecting = false;
 let longPressTimer = null;
+let replyToMessage = null; // ✅ For reply feature
 
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('✅ DOM Ready');
@@ -256,6 +257,14 @@ function setupEventListeners() {
             if (e.key === 'Enter') register();
         });
     }
+
+    // ✅ Click outside actions menu to close
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('message-actions-menu');
+        if (menu && menu.style.display !== 'none' && !menu.contains(e.target) && !e.target.closest('.message')) {
+            hideActionsMenu();
+        }
+    });
 }
 
 window.login = function() {
@@ -456,14 +465,66 @@ function updateUserBadges() {
     container.innerHTML = badges;
 }
 
+// ✅ REPLY FEATURE: Show reply preview before sending
+function setReplyTo(message) {
+    replyToMessage = message;
+    
+    // Create reply preview bar if doesn't exist
+    let previewBar = document.getElementById('reply-preview-bar');
+    if (!previewBar) {
+        previewBar = document.createElement('div');
+        previewBar.id = 'reply-preview-bar';
+        previewBar.className = 'reply-preview-bar';
+        
+        const chatTools = document.querySelector('.chat-tools');
+        chatTools.insertBefore(previewBar, chatTools.firstChild);
+    }
+    
+    const textPreview = message.text ? message.text.substring(0, 50) : '[Media]';
+    
+    previewBar.innerHTML = `
+        <div class="reply-preview-content">
+            <div class="reply-preview-label">↩️ Replying to ${esc(message.username)}</div>
+            <div class="reply-preview-text">${esc(textPreview)}</div>
+        </div>
+        <button class="reply-cancel-btn" onclick="cancelReply()">✕</button>
+    `;
+    
+    previewBar.style.display = 'flex';
+    document.getElementById('message-input').focus();
+}
+
+window.cancelReply = function() {
+    replyToMessage = null;
+    const previewBar = document.getElementById('reply-preview-bar');
+    if (previewBar) {
+        previewBar.style.display = 'none';
+    }
+};
+
 function sendMessage() {
     const textarea = document.getElementById('message-input');
     const text = textarea.value.trim();
     if (!text) return;
     if (!socket || !socket.connected) return showAlert('Reconnecting...', 'warning');
     
-    socket.emit('send-message', { text: text, roomId: currentRoom });
+    const payload = { 
+        text: text, 
+        roomId: currentRoom
+    };
+    
+    // ✅ Include reply info if replying
+    if (replyToMessage) {
+        payload.replyTo = {
+            messageId: replyToMessage.id,
+            username: replyToMessage.username,
+            text: replyToMessage.text || '[Media]'
+        };
+    }
+    
+    socket.emit('send-message', payload);
     textarea.value = '';
+    cancelReply();
 }
 
 function addMessage(message) {
@@ -489,14 +550,28 @@ function addMessage(message) {
         avatarHTML = '<span class="message-avatar-emoji">' + esc(message.avatar) + '</span>';
     }
 
+    // ✅ REPLY PREVIEW in message
+    let replyHTML = '';
+    if (message.replyTo) {
+        replyHTML = `
+            <div class="message-reply-preview">
+                <div class="reply-indicator"></div>
+                <div class="reply-content">
+                    <div class="reply-user">↩️ ${esc(message.replyTo.username)}</div>
+                    <div class="reply-text">${esc(message.replyTo.text)}</div>
+                </div>
+            </div>
+        `;
+    }
+
     let messageHTML = '';
     
     if (message.isVideo) {
-        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div><div class="message-video"><video controls style="max-width: 100%; border-radius: 10px;"><source src="' + esc(message.videoUrl) + '" type="video/mp4"></video></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-video"><video controls style="max-width: 100%; border-radius: 10px;"><source src="' + esc(message.videoUrl) + '" type="video/mp4"></video></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     } else if (message.isImage) {
-        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div><div class="message-image"><img src="' + esc(message.imageUrl) + '" alt="Image" style="max-width: 100%; border-radius: 10px;"></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-image"><img src="' + esc(message.imageUrl) + '" alt="Image" style="max-width: 100%; border-radius: 10px;"></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     } else {
-        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div><div class="message-text">' + esc(message.text) + (message.edited ? ' <small>(edited)</small>' : '') + '</div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-text">' + esc(message.text) + (message.edited ? ' <small>(edited)</small>' : '') + '</div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     }
 
     messageDiv.innerHTML = messageHTML;
@@ -516,6 +591,12 @@ function addMessage(message) {
 
 function showMessageActions(message) {
     const actions = [];
+
+    // ✅ REPLY OPTION for all messages
+    actions.push({ 
+        text: '↩️ Reply', 
+        action: () => setReplyTo(message) 
+    });
 
     if (!message.isImage && !message.isVideo && message.userId === currentUser?.id) {
         actions.push({ 
@@ -540,6 +621,7 @@ function showMessageActions(message) {
         actions.push({ text: '🔇 Mute User', action: showMuteDialog });
     }
 
+    // ✅ FIXED: Allow PM to owner
     if (message.userId !== currentUser?.id) {
         actions.push({ text: '💬 Private Message', action: () => openPrivateChat(selectedUserId) });
     }
@@ -631,7 +713,8 @@ window.showVideoUpload = () => document.getElementById('video-upload-modal').cla
 window.sendVideoMessage = function() {
     const url = document.getElementById('video-url-input').value.trim();
     if (!url) return showAlert('Enter video URL', 'error');
-    if (!url.toLowerCase().endsWith('.mp4')) return showAlert('MP4 only', 'error');
+    
+    // ✅ YOUTUBE SUPPORT
     socket.emit('send-video', { videoUrl: url });
     document.getElementById('video-url-input').value = '';
     hideModal('video-upload-modal');
@@ -669,16 +752,12 @@ function loadPrivateUsersList() {
 }
 
 function openPrivateChat(userId) {
-    if (userId === 'owner_cold_001' && currentUser.id !== 'owner_cold_001') {
-        showAlert('Cannot block or message owner directly', 'error');
-        return;
-    }
-    
+    // ✅ FIXED: Allow PM to owner
     currentPrivateChatUser = userId;
     socket.emit('get-private-messages', { withUserId: userId });
     document.getElementById('private-messages-modal').classList.add('active');
     
-    const user = Array.from(document.querySelectorAll('.user-item'))
+    const user = Array.from(document.querySelectorAll('.private-user-item'))
         .find(el => el.dataset.userId === userId);
     if (user) {
         document.getElementById('private-header').textContent = 'Chat with ' + user.dataset.userName;
@@ -1201,9 +1280,12 @@ function applySiteSettings() {
     document.getElementById('main-title').textContent = systemSettings.siteTitle;
     document.getElementById('header-title').textContent = systemSettings.siteTitle;
 
-    document.body.classList.remove('black-theme');
+    // ✅ THEME SWITCHING
+    document.body.classList.remove('black-theme', 'red-theme');
     if (systemSettings.backgroundColor === 'black') {
         document.body.classList.add('black-theme');
+    } else if (systemSettings.backgroundColor === 'red') {
+        document.body.classList.add('red-theme');
     }
 }
 
@@ -1272,8 +1354,19 @@ function createHypnoticSpiral() {
         ctx.rotate(rotation);
         
         const isBlackTheme = document.body.classList.contains('black-theme');
-        const color1 = isBlackTheme ? '#666666' : '#4a90e2';
-        const color2 = isBlackTheme ? '#333333' : '#1e3a8a';
+        const isRedTheme = document.body.classList.contains('red-theme');
+        
+        let color1, color2;
+        if (isBlackTheme) {
+            color1 = '#666666';
+            color2 = '#333333';
+        } else if (isRedTheme) {
+            color1 = '#dc2626';
+            color2 = '#7f1d1d';
+        } else {
+            color1 = '#4a90e2';
+            color2 = '#1e3a8a';
+        }
         
         for (let i = 0; i < 8; i++) {
             ctx.beginPath();
