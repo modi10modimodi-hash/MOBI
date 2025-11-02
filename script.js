@@ -567,7 +567,14 @@ function addMessage(message) {
     let messageHTML = '';
     
     if (message.isVideo) {
-        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-video"><video controls style="max-width: 100%; border-radius: 10px;"><source src="' + esc(message.videoUrl) + '" type="video/mp4"></video></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
+        // ✅ Check if YouTube embed
+        let videoContent = '';
+        if (message.isYouTube || message.videoUrl.includes('youtube.com/embed')) {
+            videoContent = '<iframe width="100%" height="315" src="' + esc(message.videoUrl) + '" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="border-radius: 10px;"></iframe>';
+        } else {
+            videoContent = '<video controls style="max-width: 100%; border-radius: 10px;"><source src="' + esc(message.videoUrl) + '" type="video/mp4"></video>';
+        }
+        messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-video">' + videoContent + '</div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     } else if (message.isImage) {
         messageHTML = '<div class="message-container"><div class="message-avatar">' + avatarHTML + '</div><div class="message-content"><div class="message-header"><span class="message-user">' + esc(message.username) + badges + '</span></div>' + replyHTML + '<div class="message-image"><img src="' + esc(message.imageUrl) + '" alt="Image" style="max-width: 100%; border-radius: 10px;"></div><div class="message-footer"><span class="message-time">' + message.timestamp + '</span></div></div></div>';
     } else {
