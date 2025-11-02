@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Cold Room V3 - COMPLETE FIXED SERVER
+// Cold Room V3.0 - COMPLETE FIXED SERVER WITH ALL FEATURES
 // © 2025 Cold Room - All Rights Reserved
 // ═══════════════════════════════════════════════════════════════
 
@@ -30,7 +30,7 @@ const DATA_FILE = 'cold_room_data.json';
 let systemSettings = {
   siteLogo: 'https://j.top4top.io/p_3585vud691.jpg',
   siteTitle: 'Cold Room',
-  backgroundColor: 'blue',
+  backgroundColor: 'blue', // blue, black, red
   loginMusic: '',
   chatMusic: '',
   loginMusicVolume: 0.5,
@@ -44,6 +44,23 @@ const bannedUsers = new Map();
 const privateMessages = new Map();
 const supportMessages = new Map();
 const onlineUsers = new Map();
+
+// ✅ YouTube ID Extraction Helper
+function extractYouTubeId(url) {
+  const patterns = [
+    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return null;
+}
 
 function loadData() {
   try {
@@ -384,7 +401,7 @@ io.on('connection', (socket) => {
         edited: false,
         isImage: false,
         isVideo: false,
-        replyTo: payload.replyTo || null
+        replyTo: payload.replyTo || null // ✅ Reply support
       };
       
       room.messages = room.messages || [];
@@ -476,13 +493,24 @@ io.on('connection', (socket) => {
       const room = rooms.get(socket.currentRoom);
       if (!room) return;
 
+      let videoUrl = payload.videoUrl || '';
+      let isYouTube = false;
+      
+      // ✅ Check if YouTube URL
+      const ytId = extractYouTubeId(videoUrl);
+      if (ytId) {
+        videoUrl = 'https://www.youtube.com/embed/' + ytId;
+        isYouTube = true;
+      }
+
       const message = {
         id: 'msg_' + uuidv4(),
         userId: socket.userId,
         username: user.displayName,
         avatar: user.avatar,
         profilePicture: user.profilePicture,
-        videoUrl: payload.videoUrl || '',
+        videoUrl: videoUrl,
+        isYouTube: isYouTube, // ✅ Flag for YouTube
         timestamp: new Date().toLocaleTimeString(),
         date: new Date().toISOString(),
         isOwner: !!user.isOwner,
@@ -818,7 +846,17 @@ io.on('connection', (socket) => {
       if (!room) return socket.emit('error', 'Room not found');
 
       if (payload.type === 'video') {
-        room.videoUrl = payload.videoUrl || null;
+        let videoUrl = payload.videoUrl || null;
+        
+        // ✅ Check if YouTube URL and convert to embed
+        if (videoUrl) {
+          const ytId = extractYouTubeId(videoUrl);
+          if (ytId) {
+            videoUrl = 'https://www.youtube.com/embed/' + ytId;
+          }
+        }
+        
+        room.videoUrl = videoUrl;
         io.to(payload.roomId).emit('room-media-updated', {
           roomId: payload.roomId,
           type: 'video',
@@ -1285,6 +1323,9 @@ server.listen(PORT, () => {
   console.log('🚀 Cold Room V3.0 - Server running on port ' + PORT);
   console.log('✅ Owner: COLDKING / ColdKing@2025');
   console.log('✅ All features enabled!');
+  console.log('✅ YouTube support enabled');
+  console.log('✅ Reply feature enabled');
+  console.log('✅ Red theme enabled');
 });
 
 // END
